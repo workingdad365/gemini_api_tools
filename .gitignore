@@ -1,0 +1,51 @@
+# 프로젝트 디렉토리
+input/
+output/
+reference/
+temp/
+
+# 가상환경
+venv/
+.venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# 환경 변수
+.env
+.env.local
+
+# 데이터베이스
+data.db
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 로그
+*.log
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# 임시 파일
+*.tmp
+*.bak
+

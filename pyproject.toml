@@ -1,0 +1,22 @@
+[project]
+name = "nanobanana"
+version = "1.0.0"
+description = "Google Gemini API Tools - Image, Video, Audio generation GUI"
+requires-python = ">=3.10"
+dependencies = [
+    "google-generativeai>=0.8.5",
+    "google-genai>=1.45.0",
+    "pillow>=11.3.0",
+    "python-dotenv>=1.1.1",
+    "tkinterdnd2>=0.4.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.uv]
+# 패키지 설치만 하고 빌드하지 않음
+package = false
+
