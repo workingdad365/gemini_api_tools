@@ -53,6 +53,7 @@ class GoogleAPIToolsGUI:
         self.aspect_ratio = tk.StringVar(value="16:9")
         self.video_resolution = tk.StringVar(value="720p")
         self.video_aspect_ratio = tk.StringVar(value="16:9")
+        self.voice_name = tk.StringVar(value="Zephyr -- Bright")
         self.current_prompt_id = None  # 현재 선택된 프롬프트 ID
         
         self.create_menu()
@@ -247,6 +248,59 @@ class GoogleAPIToolsGUI:
         
         ttk.Label(video_frame, text="(Video 생성 작업에만 적용)", foreground="gray").grid(
             row=0, column=4, sticky=tk.W, padx=(10, 0)
+        )
+        row += 1
+        
+        # TTS 설정 (Text to Speech 작업에만 적용)
+        tts_frame = ttk.Frame(main_frame)
+        tts_frame.grid(row=row, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(tts_frame, text="음성 선택:", font=("", 10, "bold")).grid(
+            row=0, column=0, sticky=tk.W, padx=(0, 10)
+        )
+        
+        voice_combo = ttk.Combobox(
+            tts_frame,
+            textvariable=self.voice_name,
+            values=[
+                "Zephyr -- Bright",
+                "Puck -- Upbeat",
+                "Charon -- Informative",
+                "Kore -- Firm",
+                "Fenrir -- Excitable",
+                "Leda -- Youthful",
+                "Orus -- Firm",
+                "Aoede -- Breezy",
+                "Callirrhoe -- Easy-going",
+                "Autonoe -- Bright",
+                "Enceladus -- Breathy",
+                "Iapetus -- Clear",
+                "Umbriel -- Easy-going",
+                "Algieba -- Smooth",
+                "Despina -- Smooth",
+                "Erinome -- Clear",
+                "Algenib -- Gravelly",
+                "Rasalgethi -- Informative",
+                "Laomedeia -- Upbeat",
+                "Achernar -- Soft",
+                "Alnilam -- Firm",
+                "Schedar -- Even",
+                "Gacrux -- Mature",
+                "Pulcherrima -- Forward",
+                "Achird -- Friendly",
+                "Zubenelgenubi -- Casual",
+                "Vindemiatrix -- Gentle",
+                "Sadachbia -- Lively",
+                "Sadaltager -- Knowledgeable",
+                "Sulafat -- Warm"
+            ],
+            state="readonly",
+            width=30
+        )
+        voice_combo.grid(row=0, column=1, sticky=tk.W)
+        
+        ttk.Label(tts_frame, text="(Text to Speech 작업에만 적용)", foreground="gray").grid(
+            row=0, column=2, sticky=tk.W, padx=(10, 0)
         )
         row += 1
         
@@ -645,7 +699,11 @@ class GoogleAPIToolsGUI:
     
     def text_to_speech(self, text):
         """Text to Speech 작업"""
-        self.log("음성 생성 중...")
+        # voice_name에서 실제 이름만 추출 ("Zephyr -- Bright" -> "Zephyr")
+        voice_display = self.voice_name.get()
+        voice_name_only = voice_display.split(" -- ")[0]
+        
+        self.log(f"음성 생성 중... (음성: {voice_display})")
         
         model = "gemini-2.5-pro-preview-tts"
         contents = [
@@ -660,7 +718,7 @@ class GoogleAPIToolsGUI:
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name="Charon"
+                        voice_name=voice_name_only
                     )
                 )
             ),

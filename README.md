@@ -22,6 +22,7 @@ Google Gemini API를 활용한 이미지, 비디오, 음성 생성 GUI 애플리
 - 이미지 종횡비 선택 (1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9)
 - 비디오 해상도 선택 (720p, 1080p)
 - 비디오 종횡비 선택 (16:9, 9:16)
+- 음성 선택 (30가지 voice 옵션)
 - 작업 완료 시 자동으로 출력 디렉토리 열기
 - 실시간 로그 표시
 
@@ -32,6 +33,11 @@ Google Gemini API를 활용한 이미지, 비디오, 음성 생성 GUI 애플리
 - Google Gemini API 키
 
 ### uv를 이용한 실행 (권장)
+
+0. uv가 설치되어 있지 않다면
+```bash
+pip install uv
+```
 
 1. **저장소 클론**
 ```bash
@@ -96,6 +102,7 @@ API 키는 [Google AI Studio](https://aistudio.google.com/apikey)에서 발급 �
 3. **설정 조정**:
    - 이미지 비율 (Text to Image)
    - 비디오 해상도 및 비율 (Video 작업)
+   - 음성 선택 (Text to Speech)
 4. **프롬프트 입력**:
    - 직접 입력
    - 또는 저장된 프롬프트 불러오기
@@ -160,6 +167,16 @@ nanobanana/
 - 해상도: 720p, 1080p
 - 종횡비: 16:9 (가로), 9:16 (세로)
 - 기본값: 720p, 16:9
+
+### 음성 생성 (Text to Speech)
+- 음성 선택: 30가지 옵션 제공
+  - Zephyr (Bright), Puck (Upbeat), Charon (Informative), Kore (Firm), Fenrir (Excitable)
+  - Leda (Youthful), Orus (Firm), Aoede (Breezy), Callirrhoe (Easy-going), Autonoe (Bright)
+  - Enceladus (Breathy), Iapetus (Clear), Umbriel (Easy-going), Algieba (Smooth), Despina (Smooth)
+  - Erinome (Clear), Algenib (Gravelly), Rasalgethi (Informative), Laomedeia (Upbeat), Achernar (Soft)
+  - Alnilam (Firm), Schedar (Even), Gacrux (Mature), Pulcherrima (Forward), Achird (Friendly)
+  - Zubenelgenubi (Casual), Vindemiatrix (Gentle), Sadachbia (Lively), Sadaltager (Knowledgeable), Sulafat (Warm)
+- 기본값: Zephyr (Bright)
 
 ## 출력 파일
 
