@@ -75,24 +75,122 @@ uvicorn app:app --host 0.0.0.0 --port 33000
 - 로컬: http://localhost:33000
 - 외부: http://[서버IP]:33000
 
+## 서버 배포 (백그라운드 실행)
+
+### 방법 1: 셸 스크립트 사용 (Linux/Mac)
+
+```bash
+# 실행 권한 부여
+chmod +x start_server.sh stop_server.sh
+
+# 서버 시작
+./start_server.sh
+
+# 로그 확인
+tail -f server.log
+
+# 서버 중지
+./stop_server.sh
+```
+
+### 방법 2: nohup 직접 사용
+
+```bash
+cd webapp
+nohup uv run app.py > server.log 2>&1 &
+echo $! > server.pid
+
+# 서버 중지
+kill $(cat server.pid)
+```
+
+### 방법 3: systemd 서비스 (권장 - Linux)
+
+1. **서비스 파일 수정**
+```bash
+# gemini-api-webapp.service 파일에서 다음 항목 수정:
+# - YOUR_USERNAME: 실제 사용자명
+# - /path/to/gemini_api_tools: 실제 경로
+```
+
+2. **서비스 설치**
+```bash
+sudo cp gemini-api-webapp.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable gemini-api-webapp
+sudo systemctl start gemini-api-webapp
+```
+
+3. **서비스 관리**
+```bash
+# 상태 확인
+sudo systemctl status gemini-api-webapp
+
+# 로그 확인
+sudo journalctl -u gemini-api-webapp -f
+
+# 서비스 중지
+sudo systemctl stop gemini-api-webapp
+
+# 서비스 재시작
+sudo systemctl restart gemini-api-webapp
+```
+
+### 방법 4: screen 또는 tmux 사용
+
+```bash
+# screen 사용
+screen -S gemini-webapp
+cd webapp
+uv run app.py
+# Ctrl+A, D로 detach
+
+# 다시 접속
+screen -r gemini-webapp
+
+# tmux 사용
+tmux new -s gemini-webapp
+cd webapp
+uv run app.py
+# Ctrl+B, D로 detach
+
+# 다시 접속
+tmux attach -t gemini-webapp
+```
+
+### Windows 배포
+
+```cmd
+# start_server.bat 실행
+start_server.bat
+```
+
+또는 Windows 서비스로 등록하려면 NSSM(Non-Sucking Service Manager) 사용 권장
+
 ## 디렉토리 구조
 
 ```
 webapp/
-├── app.py                 # FastAPI 백엔드
-├── pyproject.toml         # uv 프로젝트 설정
-├── requirements.txt       # Python 의존성
-├── README.md              # 문서
-├── .gitignore             # Git 설정
-├── data.db                # 프롬프트 데이터베이스 (자동 생성, Git 무시)
-├── static/               # 정적 파일
-│   ├── index.html       # 메인 HTML
+├── app.py                      # FastAPI 백엔드
+├── pyproject.toml              # uv 프로젝트 설정
+├── requirements.txt            # Python 의존성
+├── README.md                   # 문서
+├── .gitignore                  # Git 설정
+├── start_server.sh             # 서버 시작 스크립트 (Linux/Mac)
+├── stop_server.sh              # 서버 중지 스크립트 (Linux/Mac)
+├── start_server.bat            # 서버 시작 스크립트 (Windows)
+├── gemini-api-webapp.service   # systemd 서비스 파일
+├── data.db                     # 프롬프트 데이터베이스 (자동 생성, Git 무시)
+├── server.log                  # 서버 로그 (자동 생성, Git 무시)
+├── server.pid                  # 프로세스 ID (자동 생성, Git 무시)
+├── static/                     # 정적 파일
+│   ├── index.html             # 메인 HTML
 │   ├── css/
-│   │   └── style.css    # 커스텀 CSS
+│   │   └── style.css          # 커스텀 CSS
 │   └── js/
-│       └── main.js      # 클라이언트 JavaScript
-├── uploads/             # 업로드된 파일 임시 저장 (자동 생성)
-└── outputs/             # 생성된 파일 저장 (자동 생성)
+│       └── main.js            # 클라이언트 JavaScript
+├── uploads/                   # 업로드된 파일 임시 저장 (자동 생성)
+└── outputs/                   # 생성된 파일 저장 (자동 생성)
 ```
 
 ## API 엔드포인트

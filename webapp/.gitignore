@@ -13,6 +13,10 @@ ENV/
 data.db
 data.db-journal
 
+# 서버 로그 및 PID
+server.log
+server.pid
+
 # 업로드 및 출력 파일
 uploads/*
 !uploads/.gitkeep
