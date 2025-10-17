@@ -662,7 +662,28 @@ class GoogleAPIToolsGUI:
         aspect_ratio = self.video_aspect_ratio.get()
         self.log(f"비디오 생성 중: {input_path} (해상도: {resolution}, 비율: {aspect_ratio}, 시간이 다소 걸릴 수 있습니다)")
         
-        input_image = Image.open(input_path)
+        # PIL Image 로드 및 바이트로 변환
+        pil_image = Image.open(input_path)
+        img_byte_arr = BytesIO()
+        
+        # MIME 타입 추론
+        mime_type = mimetypes.guess_type(input_path)[0]
+        if not mime_type:
+            mime_type = "image/png"
+        
+        # 이미지를 바이트로 변환
+        image_format = mime_type.split('/')[-1].upper()
+        if image_format == 'JPG':
+            image_format = 'JPEG'
+        pil_image.save(img_byte_arr, format=image_format)
+        image_bytes = img_byte_arr.getvalue()
+        
+        # types.Image 객체 생성
+        safe_image = types.Image(
+            image_bytes=image_bytes,
+            mime_type=mime_type
+        )
+        
         model = "veo-3.1-generate-preview"
         
         # 프롬프트가 없으면 기본 프롬프트 사용
@@ -671,7 +692,8 @@ class GoogleAPIToolsGUI:
         
         operation = self.genai_client.models.generate_videos(
             model=model,
-            prompt=[prompt, input_image],
+            prompt=prompt,
+            image=safe_image,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
