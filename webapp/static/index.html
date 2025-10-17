@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Gemini API Tools</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link href="/static/css/style.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark shadow-sm">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-stars"></i> Google Gemini API Tools
+            </span>
+        </div>
+    </nav>
+
+    <div class="container py-4">
+        <div class="row">
+            <div class="col-lg-8 mx-auto">
+                <!-- 작업 선택 -->
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-list-task"></i> 작업 선택</h5>
+                    </div>
+                    <div class="card-body">
+                        <select class="form-select form-select-lg" id="operationType">
+                            <option value="text-to-image">Text to Image</option>
+                            <option value="image-to-image">Image to Image</option>
+                            <option value="text-to-video">Text to Video</option>
+                            <option value="image-to-video">Image to Video</option>
+                            <option value="text-to-speech">Text to Speech</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 입력 파일 -->
+                <div class="card mb-4 shadow-sm" id="fileInputCard" style="display: none;">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-file-earmark-image"></i> 입력 파일</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="drop-zone" id="dropZone">
+                            <i class="bi bi-cloud-arrow-up display-1 text-muted"></i>
+                            <p class="mt-3 mb-2">여기에 파일을 드래그앤드롭하거나</p>
+                            <label for="fileInput" class="btn btn-primary">
+                                <i class="bi bi-folder2-open"></i> 파일 선택
+                            </label>
+                            <input type="file" id="fileInput" class="d-none" accept="image/*">
+                            <p class="mt-2 mb-0 text-muted small" id="selectedFileName"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 설정 -->
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-gear"></i> 설정</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- 이미지 비율 -->
+                        <div class="mb-3" id="imageRatioGroup">
+                            <label class="form-label fw-bold">이미지 비율</label>
+                            <select class="form-select" id="aspectRatio">
+                                <option value="1:1">1:1</option>
+                                <option value="2:3">2:3</option>
+                                <option value="3:2">3:2</option>
+                                <option value="3:4">3:4</option>
+                                <option value="4:3">4:3</option>
+                                <option value="9:16">9:16</option>
+                                <option value="16:9" selected>16:9</option>
+                                <option value="21:9">21:9</option>
+                            </select>
+                        </div>
+
+                        <!-- 비디오 설정 -->
+                        <div id="videoSettingsGroup" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">비디오 해상도</label>
+                                    <select class="form-select" id="videoResolution">
+                                        <option value="720p" selected>720p</option>
+                                        <option value="1080p">1080p</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">비디오 비율</label>
+                                    <select class="form-select" id="videoAspectRatio">
+                                        <option value="16:9" selected>16:9 (가로)</option>
+                                        <option value="9:16">9:16 (세로)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 음성 설정 -->
+                        <div class="mb-3" id="voiceSettingsGroup" style="display: none;">
+                            <label class="form-label fw-bold">음성 선택</label>
+                            <select class="form-select" id="voiceName">
+                                <option value="Zephyr" selected>Zephyr -- Bright</option>
+                                <option value="Puck">Puck -- Upbeat</option>
+                                <option value="Charon">Charon -- Informative</option>
+                                <option value="Kore">Kore -- Firm</option>
+                                <option value="Fenrir">Fenrir -- Excitable</option>
+                                <option value="Leda">Leda -- Youthful</option>
+                                <option value="Orus">Orus -- Firm</option>
+                                <option value="Aoede">Aoede -- Breezy</option>
+                                <option value="Callirrhoe">Callirrhoe -- Easy-going</option>
+                                <option value="Autonoe">Autonoe -- Bright</option>
+                                <option value="Enceladus">Enceladus -- Breathy</option>
+                                <option value="Iapetus">Iapetus -- Clear</option>
+                                <option value="Umbriel">Umbriel -- Easy-going</option>
+                                <option value="Algieba">Algieba -- Smooth</option>
+                                <option value="Despina">Despina -- Smooth</option>
+                                <option value="Erinome">Erinome -- Clear</option>
+                                <option value="Algenib">Algenib -- Gravelly</option>
+                                <option value="Rasalgethi">Rasalgethi -- Informative</option>
+                                <option value="Laomedeia">Laomedeia -- Upbeat</option>
+                                <option value="Achernar">Achernar -- Soft</option>
+                                <option value="Alnilam">Alnilam -- Firm</option>
+                                <option value="Schedar">Schedar -- Even</option>
+                                <option value="Gacrux">Gacrux -- Mature</option>
+                                <option value="Pulcherrima">Pulcherrima -- Forward</option>
+                                <option value="Achird">Achird -- Friendly</option>
+                                <option value="Zubenelgenubi">Zubenelgenubi -- Casual</option>
+                                <option value="Vindemiatrix">Vindemiatrix -- Gentle</option>
+                                <option value="Sadachbia">Sadachbia -- Lively</option>
+                                <option value="Sadaltager">Sadaltager -- Knowledgeable</option>
+                                <option value="Sulafat">Sulafat -- Warm</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 프롬프트 입력 -->
+                <div class="card mb-4 shadow-sm">
+                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-chat-left-text"></i> 프롬프트 입력</h5>
+                        <div>
+                            <button class="btn btn-sm btn-light me-1" id="savePromptBtn">
+                                <i class="bi bi-save"></i> 저장
+                            </button>
+                            <button class="btn btn-sm btn-light" id="loadPromptBtn">
+                                <i class="bi bi-list-ul"></i> 목록
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <textarea class="form-control" id="promptText" rows="6" 
+                            placeholder="프롬프트를 입력하세요..."></textarea>
+                    </div>
+                </div>
+
+                <!-- 실행 버튼 -->
+                <div class="d-grid mb-4">
+                    <button class="btn btn-primary btn-lg" id="executeBtn">
+                        <i class="bi bi-play-circle"></i> 실행
+                    </button>
+                </div>
+
+                <!-- 진행 상태 -->
+                <div class="alert alert-info d-none" id="progressAlert" role="alert">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                            <span class="visually-hidden">처리 중...</span>
+                        </div>
+                        <span id="progressMessage">처리 중...</span>
+                    </div>
+                </div>
+
+                <!-- 결과 -->
+                <div class="card shadow-sm d-none" id="resultCard">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> 결과</h5>
+                    </div>
+                    <div class="card-body text-center" id="resultContent">
+                    </div>
+                </div>
+
+                <!-- 로그 -->
+                <div class="card mt-4 shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-terminal"></i> 로그</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="log-container" id="logContainer">
+                            <div class="text-muted">준비 완료</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 프롬프트 목록 모달 -->
+    <div class="modal fade" id="promptModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-list-ul"></i> 프롬프트 목록</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="list-group" id="promptList">
+                        <!-- 동적으로 생성 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Custom JS -->
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
+

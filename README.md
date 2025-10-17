@@ -1,8 +1,13 @@
 # Google Gemini API Tools
 
-Google Gemini API를 활용한 이미지, 비디오, 음성 생성 GUI 애플리케이션
+Google Gemini API를 활용한 이미지, 비디오, 음성 생성 애플리케이션
 
-![Screenshot](screenshot.png)
+> 💡 **두 가지 버전 제공**: 데스크톱 GUI (Tkinter) 및 웹 애플리케이션 (FastAPI)
+
+### Desktop App
+<img src="screenshot.png" alt="Screenshot" style="zoom:50%;" />
+### Web App
+<img src="screenshot2.png" alt="Screenshot" style="zoom:50%;" />
 
 ## 주요 기능
 
@@ -28,7 +33,37 @@ Google Gemini API를 활용한 이미지, 비디오, 음성 생성 GUI 애플리
 - 작업 완료 시 자동으로 출력 디렉토리 열기
 - 실시간 로그 표시
 
-## 설치 및 실행
+## 버전 선택
+
+### 데스크톱 GUI 버전 (Tkinter)
+- 로컬 환경에서 사용
+- 드래그앤드롭 지원 (tkinterdnd2 설치 시)
+- 출력 디렉토리 자동 열기
+- 실행 방법은 아래 참조
+
+### 웹 애플리케이션 버전 (FastAPI)
+- 로컬 및 원격 접속 가능
+- 모던한 웹 UI (Bootstrap)
+- 파일 다운로드 기능
+- 자세한 내용은 [webapp/README.md](webapp/README.md) 참조
+
+```bash
+# 웹 애플리케이션 실행 (빠른 시작 - uv 사용)
+cd webapp
+uv run app.py
+# 접속: http://localhost:33000
+```
+
+또는 전통적인 방법:
+```bash
+cd webapp
+pip install -r requirements.txt
+python app.py
+```
+
+---
+
+## 데스크톱 GUI 설치 및 실행
 
 ### 사전 요구사항
 - Python 3.10 이상
@@ -128,11 +163,12 @@ API 키는 [Google AI Studio](https://aistudio.google.com/apikey)에서 발급 �
 ## 디렉토리 구조
 
 ```
-nanobanana/
-├── app_gui.py              # 메인 GUI 애플리케이션
+gemini_api_tools/
+├── app_gui.py              # 데스크톱 GUI 애플리케이션 (Tkinter)
 ├── pyproject.toml          # uv 프로젝트 설정
-├── requirements.txt        # Python 의존성
+├── requirements.txt        # Python 의존성 (GUI 버전)
 ├── README.md               # 프로젝트 문서
+├── screenshot.png          # 스크린샷
 ├── .env.example            # 환경 변수 템플릿
 ├── .gitignore              # Git 무시 파일 목록
 ├── .env                    # 환경 변수 (Git 무시, 직접 생성)
@@ -140,24 +176,54 @@ nanobanana/
 ├── input/                  # 입력 파일 디렉토리 (Git 무시)
 ├── output/                 # 출력 파일 디렉토리 (자동 생성, Git 무시)
 ├── temp/                   # 임시 파일 디렉토리 (Git 무시)
+├── reference/              # 참조용 예제 코드
+├── webapp/                 # 웹 애플리케이션 버전 (FastAPI)
+│   ├── app.py             # FastAPI 백엔드
+│   ├── pyproject.toml     # uv 프로젝트 설정 (웹 버전)
+│   ├── requirements.txt   # Python 의존성 (웹 버전)
+│   ├── README.md          # 웹 버전 문서
+│   ├── .gitignore         # Git 설정
+│   ├── data.db            # 프롬프트 데이터베이스 (웹 버전, 자동 생성, Git 무시)
+│   ├── static/            # 정적 파일
+│   │   ├── index.html    # 메인 HTML
+│   │   ├── css/          # CSS 파일
+│   │   └── js/           # JavaScript 파일
+│   ├── uploads/          # 업로드 파일 (자동 생성)
+│   └── outputs/          # 출력 파일 (자동 생성)
 └── .venv/                  # uv 가상환경 (자동 생성, Git 무시)
 ```
 
 ## 기술 스택
 
-### 핵심 라이브러리
+### 데스크톱 GUI 버전
+
+#### 핵심 라이브러리
 - **google-generativeai**: Gemini Flash Image 모델 (Image to Image)
 - **google-genai**: Gemini Image, Veo Video, TTS 모델
 - **pillow**: 이미지 처리
 - **python-dotenv**: 환경 변수 관리
 - **tkinterdnd2**: 드래그앤드랍 지원 (선택적)
 
-### UI
+#### UI
 - **tkinter**: Python 표준 GUI 라이브러리
 - **ttk**: 모던 테마 위젯
 
-### 데이터베이스
+#### 데이터베이스
 - **sqlite3**: 프롬프트 저장 (Python 표준 라이브러리)
+
+### 웹 애플리케이션 버전
+
+#### 백엔드
+- **FastAPI**: 웹 프레임워크
+- **Uvicorn**: ASGI 서버
+- **google-generativeai** & **google-genai**: Gemini API
+- **Pillow**: 이미지 처리
+- **SQLite**: 프롬프트 저장
+
+#### 프론트엔드
+- **Bootstrap 5**: UI 프레임워크
+- **Bootstrap Icons**: 아이콘
+- **Vanilla JavaScript**: 클라이언트 로직
 
 ## 설정 옵션
 
@@ -182,11 +248,21 @@ nanobanana/
 
 ## 출력 파일
 
+### 데스크톱 GUI 버전
 모든 생성된 파일은 `output/` 디렉토리에 타임스탬프 기반 파일명으로 저장됨:
 
 - 이미지: `output_YYYYMMDD-HHMMSS.png`
 - 비디오: `output_YYYYMMDD-HHMMSS.mp4`
 - 음성: `output_YYYYMMDD-HHMMSS.wav`
+
+### 웹 애플리케이션 버전
+생성된 파일은 `webapp/outputs/` 디렉토리에 저장되며, 브라우저에서 다운로드 가능
+
+## 데이터베이스
+
+- **데스크톱 GUI 버전**: `data.db` (프로젝트 루트)
+- **웹 애플리케이션 버전**: `webapp/data.db` (webapp 디렉토리)
+- 각 버전의 프롬프트는 독립적으로 관리됩니다
 
 ## 제한사항
 
