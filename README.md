@@ -2,6 +2,8 @@
 
 Google Gemini API를 활용한 이미지, 비디오, 음성 생성 GUI 애플리케이션
 
+![Screenshot](screenshot.png)
+
 ## 주요 기능
 
 ### 지원 작업
