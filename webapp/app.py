@@ -3,6 +3,8 @@ import time
 import sqlite3
 import mimetypes
 import struct
+import logging
+import traceback
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -20,8 +22,27 @@ from google.genai import types
 from PIL import Image
 from dotenv import load_dotenv
 
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('server.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 # 환경 변수 로드
 load_dotenv()
+
+# .env 파일을 명시적으로 로드 (루트 디렉토리의 .env)
+env_path = Path(__file__).resolve().parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+    logger.info(f"Loaded .env from {env_path}")
+else:
+    logger.warning(f".env file not found at {env_path}")
 
 app = FastAPI(title="Google Gemini API Tools")
 
@@ -48,10 +69,13 @@ OUTPUTS_DIR.mkdir(exist_ok=True)
 # API 클라이언트 초기화
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
+    logger.error("GEMINI_API_KEY not found in environment variables")
     raise ValueError("GEMINI_API_KEY not found in environment variables")
 
+logger.info("API key loaded successfully")
 genai_old.configure(api_key=api_key)
 genai_client = genai.Client(api_key=api_key)
+logger.info("Gemini clients initialized successfully")
 
 # 정적 파일 제공
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -144,6 +168,18 @@ def parse_audio_mime_type(mime_type: str) -> dict:
 async def read_root():
     return FileResponse(str(STATIC_DIR / "index.html"))
 
+@app.get("/health")
+async def health_check():
+    """헬스 체크 및 환경 정보"""
+    return JSONResponse({
+        "status": "healthy",
+        "api_key_loaded": bool(os.getenv("GEMINI_API_KEY")),
+        "outputs_dir": str(OUTPUTS_DIR),
+        "outputs_dir_exists": OUTPUTS_DIR.exists(),
+        "db_path": str(DB_PATH),
+        "db_exists": DB_PATH.exists()
+    })
+
 @app.post("/api/text-to-image")
 async def text_to_image(
     prompt: str = Form(...),
@@ -151,6 +187,8 @@ async def text_to_image(
 ):
     """Text to Image 작업"""
     try:
+        logger.info(f"Text to Image request - prompt length: {len(prompt)}, aspect_ratio: {aspect_ratio}")
+        
         model = "gemini-2.5-flash-image"
         contents = [
             types.Content(
@@ -163,6 +201,7 @@ async def text_to_image(
             image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
         )
         
+        logger.info("Calling Gemini API...")
         for chunk in genai_client.models.generate_content_stream(
             model=model,
             contents=contents,
@@ -188,15 +227,19 @@ async def text_to_image(
                 with open(output_path, "wb") as f:
                     f.write(data_buffer)
                 
+                logger.info(f"Image saved successfully: {output_filename}")
                 return JSONResponse({
                     "status": "success",
                     "message": "이미지가 생성되었습니다.",
                     "output_file": f"/outputs/{output_filename}"
                 })
         
+        logger.error("No image data received from API")
         raise HTTPException(status_code=500, detail="이미지 생성 실패")
     
     except Exception as e:
+        logger.error(f"Text to Image error: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/image-to-image")
@@ -504,5 +547,12 @@ async def delete_prompt(prompt_id: int):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=33000)
+    logger.info("Starting Gemini API Tools Web Application on port 33000")
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=33000,
+        log_level="info",
+        access_log=True
+    )
 

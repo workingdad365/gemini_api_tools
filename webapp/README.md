@@ -236,6 +236,89 @@ webapp/
 - **Bootstrap Icons**: 아이콘
 - **Vanilla JavaScript**: 클라이언트 로직
 
+## 문제 해결 (Troubleshooting)
+
+### 로그 확인 방법
+
+```bash
+# 실시간 로그 확인
+tail -f webapp/server.log
+
+# 전체 로그 보기
+cat webapp/server.log
+
+# 최근 100줄만 보기
+tail -n 100 webapp/server.log
+```
+
+### 헬스 체크
+
+서버가 정상적으로 실행 중인지 확인:
+```bash
+curl http://localhost:33000/health
+```
+
+응답 예시:
+```json
+{
+  "status": "healthy",
+  "api_key_loaded": true,
+  "outputs_dir": "/path/to/webapp/outputs",
+  "outputs_dir_exists": true,
+  "db_path": "/path/to/webapp/data.db",
+  "db_exists": true
+}
+```
+
+### 일반적인 문제
+
+1. **500 Internal Server Error 발생 시**
+   - `server.log` 파일에서 상세한 에러 메시지 확인
+   - API 키가 올바르게 로드되었는지 확인: `curl http://localhost:33000/health`
+   - 환경 변수 확인: `echo $GEMINI_API_KEY`
+
+2. **API 키 문제**
+   ```bash
+   # .env 파일 위치 확인
+   ls -la ../.env
+   
+   # .env 파일 내용 확인 (키 값은 숨김)
+   cat ../.env | grep GEMINI_API_KEY
+   ```
+
+3. **포트 충돌**
+   ```bash
+   # 33000 포트 사용 중인 프로세스 확인
+   lsof -i :33000
+   netstat -tlnp | grep 33000
+   ```
+
+4. **권한 문제**
+   ```bash
+   # uploads, outputs 디렉토리 권한 확인
+   ls -ld uploads outputs
+   
+   # 권한 부여
+   chmod 755 uploads outputs
+   ```
+
+5. **원격 접속 문제**
+   - 방화벽에서 33000 포트가 열려있는지 확인
+   - 서버 IP 주소 확인: `ip addr` 또는 `ifconfig`
+   - 클라이언트에서 연결 테스트: `telnet [서버IP] 33000`
+
+### 상세 로그 활성화
+
+기본적으로 상세 로깅이 활성화되어 있지만, 더 자세한 정보가 필요한 경우:
+
+```python
+# app.py 상단의 로깅 레벨 변경
+logging.basicConfig(
+    level=logging.DEBUG,  # INFO -> DEBUG로 변경
+    ...
+)
+```
+
 ## 주의사항
 
 - 비디오 생성은 시간이 오래 걸릴 수 있습니다 (수 분 ~ 수십 분)
