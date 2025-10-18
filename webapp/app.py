@@ -265,12 +265,35 @@ async def image_to_image(
                 buffer.write(await file.read())
             upload_paths.append(upload_path)
         
+        # 안전 필터 설정 (OFF)
+        safety_settings = [
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+        ]
+        
         # 1개 이미지인 경우 gemini-2.5-flash-image-preview 사용
         if len(upload_paths) == 1:
             img_to_edit = Image.open(upload_paths[0])
             response = genai_client.models.generate_content(
                 model='gemini-2.5-flash-image-preview',
-                contents=[img_to_edit, prompt]
+                contents=[img_to_edit, prompt],
+                config=types.GenerateContentConfig(
+                    safety_settings=safety_settings
+                )
             )
         else:
             # 2개 이상 이미지인 경우 gemini-2.5-flash-image 사용
@@ -278,8 +301,21 @@ async def image_to_image(
             content_parts = images + [prompt]
             response = genai_client.models.generate_content(
                 model='gemini-2.5-flash-image',
-                contents=content_parts
+                contents=content_parts,
+                config=types.GenerateContentConfig(
+                    safety_settings=safety_settings
+                )
             )
+        
+        if not response.candidates:
+            logger.error(f"No candidates in response. Response: {response}")
+            raise HTTPException(status_code=500, detail="이미지 생성 실패: 응답에 후보가 없습니다.")
+        
+        if hasattr(response.candidates[0], 'finish_reason') and response.candidates[0].finish_reason:
+            finish_reason = response.candidates[0].finish_reason
+            if finish_reason not in ['STOP', 'MAX_TOKENS']:
+                logger.error(f"Generation stopped due to: {finish_reason}")
+                raise HTTPException(status_code=500, detail=f"이미지 생성 실패: {finish_reason}")
         
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
@@ -304,7 +340,8 @@ async def image_to_image(
                         "output_file": f"/outputs/{output_filename}"
                     })
         
-        raise HTTPException(status_code=500, detail="이미지 생성 실패")
+        logger.error(f"No image data in response. Response: {response}")
+        raise HTTPException(status_code=500, detail="이미지 생성 실패: 응답에 이미지 데이터가 없습니다.")
     
     except Exception as e:
         logger.error(f"Image to Image error: {str(e)}")
@@ -321,13 +358,34 @@ async def text_to_video(
 ):
     """Text to Video 작업"""
     try:
+        # 안전 필터 설정 (OFF)
+        safety_settings = [
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+        ]
+        
         model = "veo-3.1-generate-preview"
         operation = genai_client.models.generate_videos(
             model=model,
             prompt=prompt,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
-                aspect_ratio=aspect_ratio
+                aspect_ratio=aspect_ratio,
+                safety_settings=safety_settings
             )
         )
         
@@ -335,6 +393,20 @@ async def text_to_video(
         while not operation.done:
             time.sleep(10)
             operation = genai_client.operations.get(operation)
+        
+        # 작업 결과 확인
+        if hasattr(operation, 'error') and operation.error:
+            error_msg = f"Video generation failed: {operation.error}"
+            logger.error(error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
+        
+        if not operation.response or not operation.response.generated_videos:
+            logger.error(f"No videos generated. Operation response: {operation.response}")
+            raise HTTPException(status_code=500, detail="비디오 생성 실패: 응답에 비디오가 없습니다.")
+        
+        if len(operation.response.generated_videos) == 0:
+            logger.error("Generated videos list is empty")
+            raise HTTPException(status_code=500, detail="비디오 생성 실패: 생성된 비디오가 없습니다.")
         
         # 비디오 다운로드
         generated_video = operation.response.generated_videos[0]
@@ -381,6 +453,26 @@ async def image_to_video(
         if not prompt:
             prompt = "Animate this image"
         
+        # 안전 필터 설정 (OFF)
+        safety_settings = [
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+        ]
+        
         # 1개 이미지인 경우 기존 방식 사용 (image 파라미터)
         if len(upload_paths) == 1:
             pil_image = Image.open(upload_paths[0])
@@ -408,7 +500,8 @@ async def image_to_video(
                 image=safe_image,
                 config=types.GenerateVideosConfig(
                     resolution=resolution,
-                    aspect_ratio=aspect_ratio
+                    aspect_ratio=aspect_ratio,
+                    safety_settings=safety_settings
                 )
             )
         else:
@@ -441,7 +534,8 @@ async def image_to_video(
                 config=types.GenerateVideosConfig(
                     reference_images=reference_images,
                     resolution=resolution,
-                    aspect_ratio=aspect_ratio
+                    aspect_ratio=aspect_ratio,
+                    safety_settings=safety_settings
                 )
             )
         
@@ -449,6 +543,20 @@ async def image_to_video(
         while not operation.done:
             time.sleep(10)
             operation = genai_client.operations.get(operation)
+        
+        # 작업 결과 확인
+        if hasattr(operation, 'error') and operation.error:
+            error_msg = f"Video generation failed: {operation.error}"
+            logger.error(error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
+        
+        if not operation.response or not operation.response.generated_videos:
+            logger.error(f"No videos generated. Operation response: {operation.response}")
+            raise HTTPException(status_code=500, detail="비디오 생성 실패: 응답에 비디오가 없습니다.")
+        
+        if len(operation.response.generated_videos) == 0:
+            logger.error("Generated videos list is empty")
+            raise HTTPException(status_code=500, detail="비디오 생성 실패: 생성된 비디오가 없습니다.")
         
         # 비디오 다운로드
         video = operation.response.generated_videos[0]

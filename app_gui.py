@@ -598,11 +598,47 @@ class GoogleAPIToolsGUI:
         input_path = self.input_file_path.get()
         self.log(f"이미지 편집 중: {input_path}")
         
+        # 안전 필터 설정 (OFF)
+        safety_settings = [
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+        ]
+        
         img_to_edit = Image.open(input_path)
         response = self.genai_client.models.generate_content(
             model='gemini-2.5-flash-image-preview',
-            contents=[img_to_edit, prompt]
+            contents=[img_to_edit, prompt],
+            config=types.GenerateContentConfig(
+                safety_settings=safety_settings
+            )
         )
+        
+        # 응답 검증
+        if not response.candidates:
+            error_msg = f"이미지 생성 실패: 응답에 후보가 없습니다. Response: {response}"
+            self.log(error_msg)
+            raise Exception(error_msg)
+        
+        if hasattr(response.candidates[0], 'finish_reason') and response.candidates[0].finish_reason:
+            finish_reason = response.candidates[0].finish_reason
+            if finish_reason not in ['STOP', 'MAX_TOKENS']:
+                error_msg = f"이미지 생성 실패: {finish_reason}"
+                self.log(error_msg)
+                raise Exception(error_msg)
         
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
@@ -619,7 +655,9 @@ class GoogleAPIToolsGUI:
                     self.log(f"저장됨: {output_path}")
                     return
         
-        self.log("응답에서 이미지 데이터를 찾을 수 없습니다.")
+        error_msg = f"이미지 생성 실패: 응답에 이미지 데이터가 없습니다. Response: {response}"
+        self.log(error_msg)
+        raise Exception(error_msg)
     
     def text_to_video(self, prompt):
         """Text to Video 작업"""
@@ -627,13 +665,34 @@ class GoogleAPIToolsGUI:
         aspect_ratio = self.video_aspect_ratio.get()
         self.log(f"비디오 생성 중... (해상도: {resolution}, 비율: {aspect_ratio}, 시간이 다소 걸릴 수 있습니다)")
         
+        # 안전 필터 설정 (OFF)
+        safety_settings = [
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+        ]
+        
         model = "veo-3.1-generate-preview"
         operation = self.genai_client.models.generate_videos(
             model=model,
             prompt=prompt,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
-                aspect_ratio=aspect_ratio
+                aspect_ratio=aspect_ratio,
+                safety_settings=safety_settings
             )
         )
         
@@ -642,6 +701,22 @@ class GoogleAPIToolsGUI:
             self.log("비디오 생성 대기 중...")
             time.sleep(10)
             operation = self.genai_client.operations.get(operation)
+        
+        # 작업 결과 확인
+        if hasattr(operation, 'error') and operation.error:
+            error_msg = f"비디오 생성 실패: {operation.error}"
+            self.log(error_msg)
+            raise Exception(error_msg)
+        
+        if not operation.response or not operation.response.generated_videos:
+            error_msg = f"비디오 생성 실패: 응답에 비디오가 없습니다. Response: {operation.response}"
+            self.log(error_msg)
+            raise Exception(error_msg)
+        
+        if len(operation.response.generated_videos) == 0:
+            error_msg = "비디오 생성 실패: 생성된 비디오가 없습니다."
+            self.log(error_msg)
+            raise Exception(error_msg)
         
         # 비디오 다운로드
         generated_video = operation.response.generated_videos[0]
@@ -661,6 +736,26 @@ class GoogleAPIToolsGUI:
         resolution = self.video_resolution.get()
         aspect_ratio = self.video_aspect_ratio.get()
         self.log(f"비디오 생성 중: {input_path} (해상도: {resolution}, 비율: {aspect_ratio}, 시간이 다소 걸릴 수 있습니다)")
+        
+        # 안전 필터 설정 (OFF)
+        safety_settings = [
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+            types.SafetySetting(
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+        ]
         
         # PIL Image 로드 및 바이트로 변환
         pil_image = Image.open(input_path)
@@ -696,7 +791,8 @@ class GoogleAPIToolsGUI:
             image=safe_image,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
-                aspect_ratio=aspect_ratio
+                aspect_ratio=aspect_ratio,
+                safety_settings=safety_settings
             )
         )
         
@@ -705,6 +801,22 @@ class GoogleAPIToolsGUI:
             self.log("비디오 생성 대기 중...")
             time.sleep(10)
             operation = self.genai_client.operations.get(operation)
+        
+        # 작업 결과 확인
+        if hasattr(operation, 'error') and operation.error:
+            error_msg = f"비디오 생성 실패: {operation.error}"
+            self.log(error_msg)
+            raise Exception(error_msg)
+        
+        if not operation.response or not operation.response.generated_videos:
+            error_msg = f"비디오 생성 실패: 응답에 비디오가 없습니다. Response: {operation.response}"
+            self.log(error_msg)
+            raise Exception(error_msg)
+        
+        if len(operation.response.generated_videos) == 0:
+            error_msg = "비디오 생성 실패: 생성된 비디오가 없습니다."
+            self.log(error_msg)
+            raise Exception(error_msg)
         
         # 비디오 다운로드
         video = operation.response.generated_videos[0]
