@@ -43,7 +43,7 @@
                 <!-- 입력 파일 -->
                 <div class="card mb-4 shadow-sm" id="fileInputCard" style="display: none;">
                     <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0"><i class="bi bi-file-earmark-image"></i> 입력 파일</h5>
+                        <h5 class="mb-0"><i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 3장)</h5>
                     </div>
                     <div class="card-body">
                         <div class="drop-zone" id="dropZone">
@@ -52,9 +52,10 @@
                             <label for="fileInput" class="btn btn-primary">
                                 <i class="bi bi-folder2-open"></i> 파일 선택
                             </label>
-                            <input type="file" id="fileInput" class="d-none" accept="image/*">
+                            <input type="file" id="fileInput" class="d-none" accept="image/*" multiple>
                             <p class="mt-2 mb-0 text-muted small" id="selectedFileName"></p>
                         </div>
+                        <div class="image-preview-container" id="imagePreviewContainer"></div>
                     </div>
                 </div>
 

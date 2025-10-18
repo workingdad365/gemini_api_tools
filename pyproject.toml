@@ -1,5 +1,5 @@
 [project]
-name = "nanobanana"
+name = "gemini-api-tools"
 version = "1.0.0"
 description = "Google Gemini API Tools - Image, Video, Audio generation GUI"
 requires-python = ">=3.10"

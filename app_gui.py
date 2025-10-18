@@ -11,7 +11,6 @@ import subprocess
 import platform
 import sqlite3
 
-import google.generativeai as genai_old
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -40,7 +39,6 @@ class GoogleAPIToolsGUI:
             messagebox.showerror("Error", "GEMINI_API_KEY not found in .env file")
             return
         
-        genai_old.configure(api_key=api_key)
         self.genai_client = genai.Client(api_key=api_key)
         
         # 데이터베이스 초기화
@@ -600,9 +598,11 @@ class GoogleAPIToolsGUI:
         input_path = self.input_file_path.get()
         self.log(f"이미지 편집 중: {input_path}")
         
-        model = genai_old.GenerativeModel('gemini-2.5-flash-image-preview')
         img_to_edit = Image.open(input_path)
-        response = model.generate_content([prompt, img_to_edit])
+        response = self.genai_client.models.generate_content(
+            model='gemini-2.5-flash-image-preview',
+            contents=[img_to_edit, prompt]
+        )
         
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:

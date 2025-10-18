@@ -10,13 +10,12 @@ from io import BytesIO
 from typing import Optional
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-import google.generativeai as genai_old
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -73,9 +72,8 @@ if not api_key:
     raise ValueError("GEMINI_API_KEY not found in environment variables")
 
 logger.info("API key loaded successfully")
-genai_old.configure(api_key=api_key)
 genai_client = genai.Client(api_key=api_key)
-logger.info("Gemini clients initialized successfully")
+logger.info("Gemini client initialized successfully")
 
 # 정적 파일 제공
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -111,6 +109,12 @@ class TaskStatus(BaseModel):
     output_file: Optional[str] = None
 
 # 유틸리티 함수
+def pil_to_bytes(pil_image: Image.Image, image_format: str = 'JPEG') -> bytes:
+    """PIL Image를 bytes로 변환"""
+    img_byte_arr = BytesIO()
+    pil_image.save(img_byte_arr, format=image_format)
+    return img_byte_arr.getvalue()
+
 def convert_to_wav(audio_data: bytes, mime_type: str) -> bytes:
     """오디오 데이터를 WAV 포맷으로 변환"""
     parameters = parse_audio_mime_type(mime_type)
@@ -245,18 +249,37 @@ async def text_to_image(
 @app.post("/api/image-to-image")
 async def image_to_image(
     prompt: str = Form(...),
-    file: UploadFile = File(...)
+    files: list[UploadFile] = File(...)
 ):
-    """Image to Image 작업"""
+    """Image to Image 작업 (멀티 이미지 지원)"""
+    upload_paths = []
     try:
-        # 파일 저장
-        upload_path = UPLOADS_DIR / file.filename
-        with open(upload_path, "wb") as buffer:
-            buffer.write(await file.read())
+        # 최대 3개까지만 처리
+        files_to_process = files[:3]
+        logger.info(f"Processing {len(files_to_process)} images for image-to-image")
         
-        model = genai_old.GenerativeModel('gemini-2.5-flash-image-preview')
-        img_to_edit = Image.open(upload_path)
-        response = model.generate_content([prompt, img_to_edit])
+        # 파일 저장
+        for file in files_to_process:
+            upload_path = UPLOADS_DIR / file.filename
+            with open(upload_path, "wb") as buffer:
+                buffer.write(await file.read())
+            upload_paths.append(upload_path)
+        
+        # 1개 이미지인 경우 gemini-2.5-flash-image-preview 사용
+        if len(upload_paths) == 1:
+            img_to_edit = Image.open(upload_paths[0])
+            response = genai_client.models.generate_content(
+                model='gemini-2.5-flash-image-preview',
+                contents=[img_to_edit, prompt]
+            )
+        else:
+            # 2개 이상 이미지인 경우 gemini-2.5-flash-image 사용
+            images = [Image.open(path) for path in upload_paths]
+            content_parts = images + [prompt]
+            response = genai_client.models.generate_content(
+                model='gemini-2.5-flash-image',
+                contents=content_parts
+            )
         
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
@@ -271,7 +294,9 @@ async def image_to_image(
                     img.save(output_path)
                     
                     # 업로드된 파일 삭제
-                    upload_path.unlink()
+                    for upload_path in upload_paths:
+                        if upload_path.exists():
+                            upload_path.unlink()
                     
                     return JSONResponse({
                         "status": "success",
@@ -282,18 +307,19 @@ async def image_to_image(
         raise HTTPException(status_code=500, detail="이미지 생성 실패")
     
     except Exception as e:
-        if upload_path.exists():
-            upload_path.unlink()
+        logger.error(f"Image to Image error: {str(e)}")
+        for upload_path in upload_paths:
+            if upload_path.exists():
+                upload_path.unlink()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/text-to-video")
 async def text_to_video(
-    background_tasks: BackgroundTasks,
     prompt: str = Form(...),
     resolution: str = Form("720p"),
     aspect_ratio: str = Form("16:9")
 ):
-    """Text to Video 작업 (비동기)"""
+    """Text to Video 작업"""
     try:
         model = "veo-3.1-generate-preview"
         operation = genai_client.models.generate_videos(
@@ -330,40 +356,24 @@ async def text_to_video(
 
 @app.post("/api/image-to-video")
 async def image_to_video(
-    background_tasks: BackgroundTasks,
     prompt: str = Form(...),
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     resolution: str = Form("720p"),
     aspect_ratio: str = Form("16:9")
 ):
-    """Image to Video 작업 (비동기)"""
+    """Image to Video 작업 (멀티 이미지 지원)"""
+    upload_paths = []
     try:
+        # 최대 3개까지만 처리
+        files_to_process = files[:3]
+        logger.info(f"Processing {len(files_to_process)} images for image-to-video")
+        
         # 파일 저장
-        upload_path = UPLOADS_DIR / file.filename
-        with open(upload_path, "wb") as buffer:
-            buffer.write(await file.read())
-        
-        # PIL Image 로드 및 바이트로 변환
-        pil_image = Image.open(upload_path)
-        img_byte_arr = BytesIO()
-        
-        # MIME 타입 추론
-        mime_type = mimetypes.guess_type(upload_path)[0]
-        if not mime_type:
-            mime_type = "image/png"
-        
-        # 이미지를 바이트로 변환
-        image_format = mime_type.split('/')[-1].upper()
-        if image_format == 'JPG':
-            image_format = 'JPEG'
-        pil_image.save(img_byte_arr, format=image_format)
-        image_bytes = img_byte_arr.getvalue()
-        
-        # types.Image 객체 생성
-        safe_image = types.Image(
-            image_bytes=image_bytes,
-            mime_type=mime_type
-        )
+        for file in files_to_process:
+            upload_path = UPLOADS_DIR / file.filename
+            with open(upload_path, "wb") as buffer:
+                buffer.write(await file.read())
+            upload_paths.append(upload_path)
         
         model = "veo-3.1-generate-preview"
         
@@ -371,15 +381,69 @@ async def image_to_video(
         if not prompt:
             prompt = "Animate this image"
         
-        operation = genai_client.models.generate_videos(
-            model=model,
-            prompt=prompt,
-            image=safe_image,
-            config=types.GenerateVideosConfig(
-                resolution=resolution,
-                aspect_ratio=aspect_ratio
+        # 1개 이미지인 경우 기존 방식 사용 (image 파라미터)
+        if len(upload_paths) == 1:
+            pil_image = Image.open(upload_paths[0])
+            
+            # MIME 타입 추론
+            mime_type = mimetypes.guess_type(upload_paths[0])[0]
+            if not mime_type:
+                mime_type = "image/png"
+            
+            # 이미지를 바이트로 변환
+            img_format = mime_type.split('/')[-1].upper()
+            if img_format == 'JPG':
+                img_format = 'JPEG'
+            image_bytes = pil_to_bytes(pil_image, image_format=img_format)
+            
+            # types.Image 객체 생성
+            safe_image = types.Image(
+                image_bytes=image_bytes,
+                mime_type=mime_type
             )
-        )
+            
+            operation = genai_client.models.generate_videos(
+                model=model,
+                prompt=prompt,
+                image=safe_image,
+                config=types.GenerateVideosConfig(
+                    resolution=resolution,
+                    aspect_ratio=aspect_ratio
+                )
+            )
+        else:
+            # 2개 이상 이미지인 경우 reference_images 사용
+            reference_images = []
+            for upload_path in upload_paths:
+                pil_image = Image.open(upload_path)
+                
+                # MIME 타입 추론
+                mime_type = mimetypes.guess_type(upload_path)[0]
+                if not mime_type:
+                    mime_type = "image/jpeg"
+                
+                # 이미지를 바이트로 변환
+                img_format = mime_type.split('/')[-1].upper()
+                if img_format == 'JPG':
+                    img_format = 'JPEG'
+                image_bytes = pil_to_bytes(pil_image, image_format=img_format)
+                
+                # VideoGenerationReferenceImage 생성
+                reference_image = types.VideoGenerationReferenceImage(
+                    image=types.Image(image_bytes=image_bytes, mime_type=mime_type),
+                    reference_type="asset"
+                )
+                reference_images.append(reference_image)
+            
+            operation = genai_client.models.generate_videos(
+                model=model,
+                prompt=prompt,
+                config=types.GenerateVideosConfig(
+                    reference_images=reference_images,
+                    resolution=resolution,
+                    aspect_ratio=aspect_ratio
+                )
+            )
         
         # 작업 완료 대기
         while not operation.done:
@@ -397,7 +461,9 @@ async def image_to_video(
         video.video.save(str(output_path))
         
         # 업로드된 파일 삭제
-        upload_path.unlink()
+        for upload_path in upload_paths:
+            if upload_path.exists():
+                upload_path.unlink()
         
         return JSONResponse({
             "status": "success",
@@ -406,8 +472,10 @@ async def image_to_video(
         })
     
     except Exception as e:
-        if upload_path.exists():
-            upload_path.unlink()
+        logger.error(f"Image to Video error: {str(e)}")
+        for upload_path in upload_paths:
+            if upload_path.exists():
+                upload_path.unlink()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/text-to-speech")

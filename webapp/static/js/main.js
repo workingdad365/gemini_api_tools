@@ -22,9 +22,11 @@ const savePromptBtn = document.getElementById('savePromptBtn');
 const loadPromptBtn = document.getElementById('loadPromptBtn');
 const promptModal = new bootstrap.Modal(document.getElementById('promptModal'));
 const promptList = document.getElementById('promptList');
+const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 
-let selectedFile = null;
+let selectedFiles = [];
 let currentPromptId = null;
+const MAX_FILES = 3;
 
 // 로그 추가 함수
 function log(message) {
@@ -37,6 +39,64 @@ function log(message) {
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
+// 이미지 미리보기 업데이트 함수
+function updateImagePreview() {
+    imagePreviewContainer.innerHTML = '';
+    
+    if (selectedFiles.length === 0) {
+        selectedFileName.textContent = '';
+        return;
+    }
+    
+    if (selectedFiles.length === 1) {
+        selectedFileName.textContent = `선택된 파일: ${selectedFiles[0].name}`;
+    } else {
+        selectedFileName.textContent = `선택된 파일: ${selectedFiles.length}개`;
+    }
+    
+    selectedFiles.forEach((file, index) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const previewItem = document.createElement('div');
+            previewItem.className = 'image-preview-item';
+            previewItem.innerHTML = `
+                <div class="image-number">${index + 1}</div>
+                <img src="${e.target.result}" alt="Preview ${index + 1}">
+                <button class="remove-image" data-index="${index}" title="삭제">×</button>
+            `;
+            
+            const removeBtn = previewItem.querySelector('.remove-image');
+            removeBtn.addEventListener('click', () => removeFile(index));
+            
+            imagePreviewContainer.appendChild(previewItem);
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+// 파일 제거 함수
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    updateImagePreview();
+    log(`파일 제거됨 (남은 파일: ${selectedFiles.length}개)`);
+}
+
+// 파일 추가 함수
+function addFiles(files) {
+    const newFiles = Array.from(files);
+    
+    if (selectedFiles.length + newFiles.length > MAX_FILES) {
+        alert(`최대 ${MAX_FILES}개의 파일만 선택할 수 있습니다.`);
+        const allowedCount = MAX_FILES - selectedFiles.length;
+        selectedFiles = selectedFiles.concat(newFiles.slice(0, allowedCount));
+    } else {
+        selectedFiles = selectedFiles.concat(newFiles);
+    }
+    
+    updateImagePreview();
+    log(`파일 추가됨: ${newFiles.length}개 (전체: ${selectedFiles.length}개)`);
+}
+
 // 작업 유형 변경 시
 operationType.addEventListener('change', () => {
     const operation = operationType.value;
@@ -46,8 +106,9 @@ operationType.addEventListener('change', () => {
         fileInputCard.style.display = 'block';
     } else {
         fileInputCard.style.display = 'none';
-        selectedFile = null;
+        selectedFiles = [];
         selectedFileName.textContent = '';
+        imagePreviewContainer.innerHTML = '';
     }
     
     // 설정 표시 여부
@@ -59,9 +120,7 @@ operationType.addEventListener('change', () => {
 // 파일 선택
 fileInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
-        selectedFile = e.target.files[0];
-        selectedFileName.textContent = `선택된 파일: ${selectedFile.name}`;
-        log(`파일 선택: ${selectedFile.name}`);
+        addFiles(e.target.files);
     }
 });
 
@@ -92,10 +151,7 @@ dropZone.addEventListener('drop', (e) => {
     const files = dt.files;
     
     if (files.length > 0) {
-        selectedFile = files[0];
-        fileInput.files = files;
-        selectedFileName.textContent = `선택된 파일: ${selectedFile.name}`;
-        log(`파일 드래그앤드롭: ${selectedFile.name}`);
+        addFiles(files);
     }
 });
 
@@ -110,7 +166,7 @@ executeBtn.addEventListener('click', async () => {
         return;
     }
     
-    if ((operation === 'image-to-image' || operation === 'image-to-video') && !selectedFile) {
+    if ((operation === 'image-to-image' || operation === 'image-to-video') && selectedFiles.length === 0) {
         alert('입력 파일을 선택하세요.');
         return;
     }
@@ -131,13 +187,13 @@ executeBtn.addEventListener('click', async () => {
                 result = await executeTextToImage(prompt, aspectRatio.value);
                 break;
             case 'image-to-image':
-                result = await executeImageToImage(prompt, selectedFile);
+                result = await executeImageToImage(prompt, selectedFiles);
                 break;
             case 'text-to-video':
                 result = await executeTextToVideo(prompt, videoResolution.value, videoAspectRatio.value);
                 break;
             case 'image-to-video':
-                result = await executeImageToVideo(prompt, selectedFile, videoResolution.value, videoAspectRatio.value);
+                result = await executeImageToVideo(prompt, selectedFiles, videoResolution.value, videoAspectRatio.value);
                 break;
             case 'text-to-speech':
                 result = await executeTextToSpeech(prompt, voiceName.value);
@@ -174,10 +230,14 @@ async function executeTextToImage(prompt, aspectRatio) {
     return await response.json();
 }
 
-async function executeImageToImage(prompt, file) {
+async function executeImageToImage(prompt, files) {
     const formData = new FormData();
     formData.append('prompt', prompt);
-    formData.append('file', file);
+    
+    // 멀티 파일 업로드
+    files.forEach((file, index) => {
+        formData.append('files', file);
+    });
     
     const response = await fetch('/api/image-to-image', {
         method: 'POST',
@@ -203,12 +263,17 @@ async function executeTextToVideo(prompt, resolution, aspectRatio) {
     return await response.json();
 }
 
-async function executeImageToVideo(prompt, file, resolution, aspectRatio) {
+async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
     log('비디오 생성 중... (시간이 다소 걸릴 수 있습니다)');
     
     const formData = new FormData();
     formData.append('prompt', prompt);
-    formData.append('file', file);
+    
+    // 멀티 파일 업로드
+    files.forEach((file, index) => {
+        formData.append('files', file);
+    });
+    
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
