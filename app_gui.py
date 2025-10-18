@@ -665,34 +665,13 @@ class GoogleAPIToolsGUI:
         aspect_ratio = self.video_aspect_ratio.get()
         self.log(f"비디오 생성 중... (해상도: {resolution}, 비율: {aspect_ratio}, 시간이 다소 걸릴 수 있습니다)")
         
-        # 안전 필터 설정 (OFF)
-        safety_settings = [
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-        ]
-        
         model = "veo-3.1-generate-preview"
         operation = self.genai_client.models.generate_videos(
             model=model,
             prompt=prompt,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
-                aspect_ratio=aspect_ratio,
-                safety_settings=safety_settings
+                aspect_ratio=aspect_ratio
             )
         )
         
@@ -737,26 +716,6 @@ class GoogleAPIToolsGUI:
         aspect_ratio = self.video_aspect_ratio.get()
         self.log(f"비디오 생성 중: {input_path} (해상도: {resolution}, 비율: {aspect_ratio}, 시간이 다소 걸릴 수 있습니다)")
         
-        # 안전 필터 설정 (OFF)
-        safety_settings = [
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-        ]
-        
         # PIL Image 로드 및 바이트로 변환
         pil_image = Image.open(input_path)
         img_byte_arr = BytesIO()
@@ -791,8 +750,7 @@ class GoogleAPIToolsGUI:
             image=safe_image,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
-                aspect_ratio=aspect_ratio,
-                safety_settings=safety_settings
+                aspect_ratio=aspect_ratio
             )
         )
         

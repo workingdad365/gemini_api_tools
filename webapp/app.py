@@ -358,34 +358,13 @@ async def text_to_video(
 ):
     """Text to Video 작업"""
     try:
-        # 안전 필터 설정 (OFF)
-        safety_settings = [
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-        ]
-        
         model = "veo-3.1-generate-preview"
         operation = genai_client.models.generate_videos(
             model=model,
             prompt=prompt,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
-                aspect_ratio=aspect_ratio,
-                safety_settings=safety_settings
+                aspect_ratio=aspect_ratio
             )
         )
         
@@ -453,26 +432,6 @@ async def image_to_video(
         if not prompt:
             prompt = "Animate this image"
         
-        # 안전 필터 설정 (OFF)
-        safety_settings = [
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-        ]
-        
         # 1개 이미지인 경우 기존 방식 사용 (image 파라미터)
         if len(upload_paths) == 1:
             pil_image = Image.open(upload_paths[0])
@@ -500,8 +459,7 @@ async def image_to_video(
                 image=safe_image,
                 config=types.GenerateVideosConfig(
                     resolution=resolution,
-                    aspect_ratio=aspect_ratio,
-                    safety_settings=safety_settings
+                    aspect_ratio=aspect_ratio
                 )
             )
         else:
@@ -534,8 +492,7 @@ async def image_to_video(
                 config=types.GenerateVideosConfig(
                     reference_images=reference_images,
                     resolution=resolution,
-                    aspect_ratio=aspect_ratio,
-                    safety_settings=safety_settings
+                    aspect_ratio=aspect_ratio
                 )
             )
         
