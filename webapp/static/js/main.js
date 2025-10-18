@@ -34,6 +34,21 @@ function log(message) {
     const timestamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     const logEntry = document.createElement('div');
     logEntry.className = 'log-entry';
+    logEntry.style.whiteSpace = 'pre-wrap'; // 줄바꿈 유지
+    logEntry.textContent = `[${timestamp}] ${message}`;
+    logContainer.appendChild(logEntry);
+    logContainer.scrollTop = logContainer.scrollHeight;
+}
+
+// 에러 로그 추가 함수 (빨간색)
+function logError(message) {
+    const now = new Date();
+    const timestamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const logEntry = document.createElement('div');
+    logEntry.className = 'log-entry';
+    logEntry.style.whiteSpace = 'pre-wrap'; // 줄바꿈 유지
+    logEntry.style.color = '#ff4444'; // 빨간색
+    logEntry.style.fontWeight = 'bold';
     logEntry.textContent = `[${timestamp}] ${message}`;
     logContainer.appendChild(logEntry);
     logContainer.scrollTop = logContainer.scrollHeight;
@@ -208,8 +223,14 @@ executeBtn.addEventListener('click', async () => {
         }
         
     } catch (error) {
-        log(`오류 발생: ${error.message}`);
-        alert(`오류가 발생했습니다: ${error.message}`);
+        // 로그에는 전체 에러 내용 출력 (빨간색으로 표시)
+        if (error.details) {
+            logError(`오류 발생:\n${error.details}`);
+        } else {
+            logError(`오류 발생: ${error.message}`);
+        }
+        // 팝업은 간단하게
+        alert('작업 실패: 자세한 내용은 로그를 확인하세요.');
     } finally {
         executeBtn.disabled = false;
         progressAlert.classList.add('d-none');
@@ -227,7 +248,15 @@ async function executeTextToImage(prompt, aspectRatio) {
         body: formData
     });
     
-    return await response.json();
+    const result = await response.json();
+    
+    if (!response.ok) {
+        const error = new Error(result.detail || '작업 실패');
+        error.details = result.detail;
+        throw error;
+    }
+    
+    return result;
 }
 
 async function executeImageToImage(prompt, files) {
@@ -244,7 +273,15 @@ async function executeImageToImage(prompt, files) {
         body: formData
     });
     
-    return await response.json();
+    const result = await response.json();
+    
+    if (!response.ok) {
+        const error = new Error(result.detail || '작업 실패');
+        error.details = result.detail;
+        throw error;
+    }
+    
+    return result;
 }
 
 async function executeTextToVideo(prompt, resolution, aspectRatio) {
@@ -260,7 +297,15 @@ async function executeTextToVideo(prompt, resolution, aspectRatio) {
         body: formData
     });
     
-    return await response.json();
+    const result = await response.json();
+    
+    if (!response.ok) {
+        const error = new Error(result.detail || '작업 실패');
+        error.details = result.detail;
+        throw error;
+    }
+    
+    return result;
 }
 
 async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
@@ -282,7 +327,15 @@ async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
         body: formData
     });
     
-    return await response.json();
+    const result = await response.json();
+    
+    if (!response.ok) {
+        const error = new Error(result.detail || '작업 실패');
+        error.details = result.detail;
+        throw error;
+    }
+    
+    return result;
 }
 
 async function executeTextToSpeech(prompt, voiceName) {
@@ -295,7 +348,15 @@ async function executeTextToSpeech(prompt, voiceName) {
         body: formData
     });
     
-    return await response.json();
+    const result = await response.json();
+    
+    if (!response.ok) {
+        const error = new Error(result.detail || '작업 실패');
+        error.details = result.detail;
+        throw error;
+    }
+    
+    return result;
 }
 
 // 결과 표시
@@ -368,7 +429,7 @@ savePromptBtn.addEventListener('click', async () => {
             alert('프롬프트가 저장되었습니다.');
         }
     } catch (error) {
-        log(`프롬프트 저장 오류: ${error.message}`);
+        logError(`프롬프트 저장 오류: ${error.message}`);
         alert('프롬프트 저장 중 오류가 발생했습니다.');
     }
 });
@@ -441,7 +502,7 @@ loadPromptBtn.addEventListener('click', async () => {
         
         promptModal.show();
     } catch (error) {
-        log(`프롬프트 목록 불러오기 오류: ${error.message}`);
+        logError(`프롬프트 목록 불러오기 오류: ${error.message}`);
         alert('프롬프트 목록을 불러오는 중 오류가 발생했습니다.');
     }
 });
