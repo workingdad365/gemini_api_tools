@@ -688,8 +688,20 @@ class GoogleAPIToolsGUI:
             raise Exception(error_msg)
         
         if not operation.response or not operation.response.generated_videos:
-            error_msg = f"비디오 생성 실패: 응답에 비디오가 없습니다. Response: {operation.response}"
-            self.log(error_msg)
+            # RAI 필터링 이유 확인
+            error_msg = "비디오 생성 실패"
+            if operation.response and hasattr(operation.response, 'rai_media_filtered_reasons'):
+                filtered_reasons = operation.response.rai_media_filtered_reasons
+                if filtered_reasons:
+                    reasons_text = "\n".join(filtered_reasons)
+                    error_msg = f"비디오 생성 실패:\n{reasons_text}"
+                    self.log(f"비디오 생성 실패. Filtered reasons: {filtered_reasons}")
+                else:
+                    error_msg = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                    self.log(f"비디오 생성 실패. Response: {operation.response}")
+            else:
+                error_msg = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                self.log(f"비디오 생성 실패. Response: {operation.response}")
             raise Exception(error_msg)
         
         if len(operation.response.generated_videos) == 0:
@@ -767,8 +779,20 @@ class GoogleAPIToolsGUI:
             raise Exception(error_msg)
         
         if not operation.response or not operation.response.generated_videos:
-            error_msg = f"비디오 생성 실패: 응답에 비디오가 없습니다. Response: {operation.response}"
-            self.log(error_msg)
+            # RAI 필터링 이유 확인
+            error_msg = "비디오 생성 실패"
+            if operation.response and hasattr(operation.response, 'rai_media_filtered_reasons'):
+                filtered_reasons = operation.response.rai_media_filtered_reasons
+                if filtered_reasons:
+                    reasons_text = "\n".join(filtered_reasons)
+                    error_msg = f"비디오 생성 실패:\n{reasons_text}"
+                    self.log(f"비디오 생성 실패. Filtered reasons: {filtered_reasons}")
+                else:
+                    error_msg = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                    self.log(f"비디오 생성 실패. Response: {operation.response}")
+            else:
+                error_msg = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                self.log(f"비디오 생성 실패. Response: {operation.response}")
             raise Exception(error_msg)
         
         if len(operation.response.generated_videos) == 0:

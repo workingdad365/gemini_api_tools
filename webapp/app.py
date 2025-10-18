@@ -380,8 +380,21 @@ async def text_to_video(
             raise HTTPException(status_code=500, detail=error_msg)
         
         if not operation.response or not operation.response.generated_videos:
-            logger.error(f"No videos generated. Operation response: {operation.response}")
-            raise HTTPException(status_code=500, detail="비디오 생성 실패: 응답에 비디오가 없습니다.")
+            # RAI 필터링 이유 확인
+            error_detail = "비디오 생성 실패"
+            if operation.response and hasattr(operation.response, 'rai_media_filtered_reasons'):
+                filtered_reasons = operation.response.rai_media_filtered_reasons
+                if filtered_reasons:
+                    reasons_text = "\n".join(filtered_reasons)
+                    error_detail = f"비디오 생성 실패:\n{reasons_text}"
+                    logger.error(f"No videos generated. Filtered reasons: {filtered_reasons}")
+                else:
+                    error_detail = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                    logger.error(f"No videos generated. Operation response: {operation.response}")
+            else:
+                error_detail = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                logger.error(f"No videos generated. Operation response: {operation.response}")
+            raise HTTPException(status_code=500, detail=error_detail)
         
         if len(operation.response.generated_videos) == 0:
             logger.error("Generated videos list is empty")
@@ -508,8 +521,21 @@ async def image_to_video(
             raise HTTPException(status_code=500, detail=error_msg)
         
         if not operation.response or not operation.response.generated_videos:
-            logger.error(f"No videos generated. Operation response: {operation.response}")
-            raise HTTPException(status_code=500, detail="비디오 생성 실패: 응답에 비디오가 없습니다.")
+            # RAI 필터링 이유 확인
+            error_detail = "비디오 생성 실패"
+            if operation.response and hasattr(operation.response, 'rai_media_filtered_reasons'):
+                filtered_reasons = operation.response.rai_media_filtered_reasons
+                if filtered_reasons:
+                    reasons_text = "\n".join(filtered_reasons)
+                    error_detail = f"비디오 생성 실패:\n{reasons_text}"
+                    logger.error(f"No videos generated. Filtered reasons: {filtered_reasons}")
+                else:
+                    error_detail = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                    logger.error(f"No videos generated. Operation response: {operation.response}")
+            else:
+                error_detail = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                logger.error(f"No videos generated. Operation response: {operation.response}")
+            raise HTTPException(status_code=500, detail=error_detail)
         
         if len(operation.response.generated_videos) == 0:
             logger.error("Generated videos list is empty")
