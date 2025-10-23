@@ -218,25 +218,31 @@ async def text_to_image(
             ):
                 continue
             
-            if (chunk.candidates[0].content.parts[0].inline_data and 
-                chunk.candidates[0].content.parts[0].inline_data.data):
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                inline_data = chunk.candidates[0].content.parts[0].inline_data
-                data_buffer = inline_data.data
-                file_extension = mimetypes.guess_extension(inline_data.mime_type)
+            # 모든 parts를 순회하면서 텍스트와 이미지를 각각 처리
+            for part in chunk.candidates[0].content.parts:
+                # 텍스트 응답 처리
+                if part.text is not None:
+                    logger.info(f"Received text response: {part.text[:100]}...")
                 
-                output_filename = f"output_{timestamp}{file_extension}"
-                output_path = OUTPUTS_DIR / output_filename
-                
-                with open(output_path, "wb") as f:
-                    f.write(data_buffer)
-                
-                logger.info(f"Image saved successfully: {output_filename}")
-                return JSONResponse({
-                    "status": "success",
-                    "message": "이미지가 생성되었습니다.",
-                    "output_file": f"/outputs/{output_filename}"
-                })
+                # 이미지 데이터 처리
+                elif part.inline_data is not None and part.inline_data.data:
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    inline_data = part.inline_data
+                    data_buffer = inline_data.data
+                    file_extension = mimetypes.guess_extension(inline_data.mime_type)
+                    
+                    output_filename = f"output_{timestamp}{file_extension}"
+                    output_path = OUTPUTS_DIR / output_filename
+                    
+                    with open(output_path, "wb") as f:
+                        f.write(data_buffer)
+                    
+                    logger.info(f"Image saved successfully: {output_filename}")
+                    return JSONResponse({
+                        "status": "success",
+                        "message": "이미지가 생성되었습니다.",
+                        "output_file": f"/outputs/{output_filename}"
+                    })
         
         logger.error("No image data received from API")
         raise HTTPException(status_code=500, detail="이미지 생성 실패")
@@ -319,7 +325,12 @@ async def image_to_image(
         
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
-                if part.inline_data:
+                # 텍스트 응답 처리
+                if part.text is not None:
+                    logger.info(f"Received text response: {part.text[:100]}...")
+                
+                # 이미지 데이터 처리
+                elif part.inline_data is not None:
                     image_data = BytesIO(part.inline_data.data)
                     img = Image.open(image_data)
                     
