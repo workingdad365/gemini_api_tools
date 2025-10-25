@@ -294,43 +294,37 @@ async def image_to_image(
         # 1개 이미지인 경우 gemini-2.5-flash-image-preview 사용
         if len(upload_paths) == 1:
             img_to_edit = Image.open(upload_paths[0])
-            response = genai_client.models.generate_content(
-                model='gemini-2.5-flash-image-preview',
-                contents=[img_to_edit, prompt],
-                config=types.GenerateContentConfig(
-                    safety_settings=safety_settings
-                )
-            )
+            model = 'gemini-2.5-flash-image-preview'
+            contents = [img_to_edit, prompt]
         else:
             # 2개 이상 이미지인 경우 gemini-2.5-flash-image 사용
             images = [Image.open(path) for path in upload_paths]
-            content_parts = images + [prompt]
-            response = genai_client.models.generate_content(
-                model='gemini-2.5-flash-image',
-                contents=content_parts,
-                config=types.GenerateContentConfig(
-                    safety_settings=safety_settings
-                )
+            model = 'gemini-2.5-flash-image'
+            contents = images + [prompt]
+        
+        # 스트리밍 방식으로 이미지 생성
+        for chunk in genai_client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                safety_settings=safety_settings
             )
-        
-        if not response.candidates:
-            logger.error(f"No candidates in response. Response: {response}")
-            raise HTTPException(status_code=500, detail="이미지 생성 실패: 응답에 후보가 없습니다.")
-        
-        if hasattr(response.candidates[0], 'finish_reason') and response.candidates[0].finish_reason:
-            finish_reason = response.candidates[0].finish_reason
-            if finish_reason not in ['STOP', 'MAX_TOKENS']:
-                logger.error(f"Generation stopped due to: {finish_reason}")
-                raise HTTPException(status_code=500, detail=f"이미지 생성 실패: {finish_reason}")
-        
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
+        ):
+            if (
+                chunk.candidates is None
+                or chunk.candidates[0].content is None
+                or chunk.candidates[0].content.parts is None
+            ):
+                continue
+            
+            # 모든 parts를 순회하면서 텍스트와 이미지를 각각 처리
+            for part in chunk.candidates[0].content.parts:
                 # 텍스트 응답 처리
                 if part.text is not None:
                     logger.info(f"Received text response: {part.text[:100]}...")
                 
                 # 이미지 데이터 처리
-                elif part.inline_data is not None:
+                elif part.inline_data is not None and part.inline_data.data:
                     image_data = BytesIO(part.inline_data.data)
                     img = Image.open(image_data)
                     
@@ -351,7 +345,7 @@ async def image_to_image(
                         "output_file": f"/outputs/{output_filename}"
                     })
         
-        logger.error(f"No image data in response. Response: {response}")
+        logger.error("No image data received from API")
         raise HTTPException(status_code=500, detail="이미지 생성 실패: 응답에 이미지 데이터가 없습니다.")
     
     except Exception as e:
