@@ -405,17 +405,31 @@ class GoogleAPIToolsGUI:
     
     def browse_input_file(self):
         """입력 파일 선택 다이얼로그"""
+        operation = self.operation_type.get()
         filetypes = [
             ("Image files", "*.png *.jpg *.jpeg *.webp *.gif"),
             ("Video files", "*.mp4 *.avi *.mov"),
             ("All files", "*.*")
         ]
-        filename = filedialog.askopenfilename(
-            title="입력 파일 선택",
-            filetypes=filetypes
-        )
-        if filename:
-            self.input_file_path.set(filename)
+        
+        # Image to Image는 다중 선택 가능 (최대 3개)
+        if operation == "Image to Image":
+            filenames = filedialog.askopenfilenames(
+                title="입력 파일 선택 (최대 3개)",
+                filetypes=filetypes
+            )
+            if filenames:
+                # 최대 3개까지만
+                selected_files = filenames[:3]
+                # 세미콜론으로 구분하여 저장
+                self.input_file_path.set(";".join(selected_files))
+        else:
+            filename = filedialog.askopenfilename(
+                title="입력 파일 선택",
+                filetypes=filetypes
+            )
+            if filename:
+                self.input_file_path.set(filename)
     
     def browse_output_directory(self):
         """출력 디렉토리 선택 다이얼로그"""
@@ -493,10 +507,17 @@ class GoogleAPIToolsGUI:
         
         # 입력 검증
         if operation in ["Image to Image", "Image to Video"]:
-            input_file = self.input_file_path.get()
-            if not input_file or not os.path.exists(input_file):
-                messagebox.showerror("Error", "유효한 입력 파일을 선택하세요.")
+            input_files_str = self.input_file_path.get()
+            if not input_files_str:
+                messagebox.showerror("Error", "입력 파일을 선택하세요.")
                 return
+            
+            # 세미콜론으로 구분된 파일 경로 검증
+            input_files = [p.strip() for p in input_files_str.split(";") if p.strip()]
+            for file_path in input_files:
+                if not os.path.exists(file_path):
+                    messagebox.showerror("Error", f"파일을 찾을 수 없습니다:\n{file_path}")
+                    return
         
         # 프롬프트 입력 검증
         if not prompt:
@@ -575,28 +596,34 @@ class GoogleAPIToolsGUI:
             ):
                 continue
             
-            if (chunk.candidates[0].content.parts[0].inline_data and 
-                chunk.candidates[0].content.parts[0].inline_data.data):
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                inline_data = chunk.candidates[0].content.parts[0].inline_data
-                data_buffer = inline_data.data
-                file_extension = mimetypes.guess_extension(inline_data.mime_type)
+            # 모든 parts를 순회하면서 텍스트와 이미지를 각각 처리
+            for part in chunk.candidates[0].content.parts:
+                # 텍스트 응답 처리
+                if part.text is not None:
+                    self.log(f"응답: {part.text[:100]}...")
                 
-                output_path = os.path.join(
-                    self.output_directory.get(), 
-                    f"output_{timestamp}{file_extension}"
-                )
-                with open(output_path, "wb") as f:
-                    f.write(data_buffer)
-                self.log(f"저장됨: {output_path}")
-            else:
-                if hasattr(chunk, 'text'):
-                    self.log(chunk.text)
+                # 이미지 데이터 처리
+                elif part.inline_data is not None and part.inline_data.data:
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    inline_data = part.inline_data
+                    data_buffer = inline_data.data
+                    file_extension = mimetypes.guess_extension(inline_data.mime_type)
+                    
+                    output_path = os.path.join(
+                        self.output_directory.get(), 
+                        f"output_{timestamp}{file_extension}"
+                    )
+                    with open(output_path, "wb") as f:
+                        f.write(data_buffer)
+                    self.log(f"저장됨: {output_path}")
     
     def image_to_image(self, prompt):
-        """Image to Image 작업"""
-        input_path = self.input_file_path.get()
-        self.log(f"이미지 편집 중: {input_path}")
+        """Image to Image 작업 (멀티 이미지 지원)"""
+        input_paths_str = self.input_file_path.get()
+        # 세미콜론으로 구분된 경로를 리스트로 변환
+        input_paths = [p.strip() for p in input_paths_str.split(";") if p.strip()]
+        
+        self.log(f"이미지 편집 중: {len(input_paths)}개 이미지")
         
         # 안전 필터 설정 (OFF)
         safety_settings = [
@@ -618,31 +645,40 @@ class GoogleAPIToolsGUI:
             ),
         ]
         
-        img_to_edit = Image.open(input_path)
-        response = self.genai_client.models.generate_content(
-            model='gemini-2.5-flash-image-preview',
-            contents=[img_to_edit, prompt],
+        # 1개 이미지인 경우 gemini-2.5-flash-image-preview 사용
+        if len(input_paths) == 1:
+            img_to_edit = Image.open(input_paths[0])
+            model = 'gemini-2.5-flash-image-preview'
+            contents = [img_to_edit, prompt]
+        else:
+            # 2개 이상 이미지인 경우 gemini-2.5-flash-image 사용
+            images = [Image.open(path) for path in input_paths[:3]]  # 최대 3개
+            model = 'gemini-2.5-flash-image'
+            contents = images + [prompt]
+        
+        # 스트리밍 방식으로 이미지 생성
+        for chunk in self.genai_client.models.generate_content_stream(
+            model=model,
+            contents=contents,
             config=types.GenerateContentConfig(
                 safety_settings=safety_settings
             )
-        )
-        
-        # 응답 검증
-        if not response.candidates:
-            error_msg = f"이미지 생성 실패: 응답에 후보가 없습니다. Response: {response}"
-            self.log(error_msg)
-            raise Exception(error_msg)
-        
-        if hasattr(response.candidates[0], 'finish_reason') and response.candidates[0].finish_reason:
-            finish_reason = response.candidates[0].finish_reason
-            if finish_reason not in ['STOP', 'MAX_TOKENS']:
-                error_msg = f"이미지 생성 실패: {finish_reason}"
-                self.log(error_msg)
-                raise Exception(error_msg)
-        
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.inline_data:
+        ):
+            if (
+                chunk.candidates is None
+                or chunk.candidates[0].content is None
+                or chunk.candidates[0].content.parts is None
+            ):
+                continue
+            
+            # 모든 parts를 순회하면서 텍스트와 이미지를 각각 처리
+            for part in chunk.candidates[0].content.parts:
+                # 텍스트 응답 처리
+                if part.text is not None:
+                    self.log(f"응답: {part.text[:100]}...")
+                
+                # 이미지 데이터 처리
+                elif part.inline_data is not None and part.inline_data.data:
                     image_data = BytesIO(part.inline_data.data)
                     img = Image.open(image_data)
                     
@@ -655,7 +691,7 @@ class GoogleAPIToolsGUI:
                     self.log(f"저장됨: {output_path}")
                     return
         
-        error_msg = f"이미지 생성 실패: 응답에 이미지 데이터가 없습니다. Response: {response}"
+        error_msg = "이미지 생성 실패: 응답에 이미지 데이터가 없습니다."
         self.log(error_msg)
         raise Exception(error_msg)
     
@@ -722,33 +758,14 @@ class GoogleAPIToolsGUI:
         self.log(f"저장됨: {output_path}")
     
     def image_to_video(self, prompt):
-        """Image to Video 작업"""
-        input_path = self.input_file_path.get()
+        """Image to Video 작업 (멀티 이미지 지원)"""
+        input_paths_str = self.input_file_path.get()
+        # 세미콜론으로 구분된 경로를 리스트로 변환
+        input_paths = [p.strip() for p in input_paths_str.split(";") if p.strip()]
+        
         resolution = self.video_resolution.get()
         aspect_ratio = self.video_aspect_ratio.get()
-        self.log(f"비디오 생성 중: {input_path} (해상도: {resolution}, 비율: {aspect_ratio}, 시간이 다소 걸릴 수 있습니다)")
-        
-        # PIL Image 로드 및 바이트로 변환
-        pil_image = Image.open(input_path)
-        img_byte_arr = BytesIO()
-        
-        # MIME 타입 추론
-        mime_type = mimetypes.guess_type(input_path)[0]
-        if not mime_type:
-            mime_type = "image/png"
-        
-        # 이미지를 바이트로 변환
-        image_format = mime_type.split('/')[-1].upper()
-        if image_format == 'JPG':
-            image_format = 'JPEG'
-        pil_image.save(img_byte_arr, format=image_format)
-        image_bytes = img_byte_arr.getvalue()
-        
-        # types.Image 객체 생성
-        safe_image = types.Image(
-            image_bytes=image_bytes,
-            mime_type=mime_type
-        )
+        self.log(f"비디오 생성 중: {len(input_paths)}개 이미지 (해상도: {resolution}, 비율: {aspect_ratio}, 시간이 다소 걸릴 수 있습니다)")
         
         model = "veo-3.1-generate-preview"
         
@@ -756,15 +773,73 @@ class GoogleAPIToolsGUI:
         if not prompt:
             prompt = "Animate this image"
         
-        operation = self.genai_client.models.generate_videos(
-            model=model,
-            prompt=prompt,
-            image=safe_image,
-            config=types.GenerateVideosConfig(
-                resolution=resolution,
-                aspect_ratio=aspect_ratio
+        # 1개 이미지인 경우 기존 방식 사용 (image 파라미터)
+        if len(input_paths) == 1:
+            pil_image = Image.open(input_paths[0])
+            img_byte_arr = BytesIO()
+            
+            # MIME 타입 추론
+            mime_type = mimetypes.guess_type(input_paths[0])[0]
+            if not mime_type:
+                mime_type = "image/png"
+            
+            # 이미지를 바이트로 변환
+            image_format = mime_type.split('/')[-1].upper()
+            if image_format == 'JPG':
+                image_format = 'JPEG'
+            pil_image.save(img_byte_arr, format=image_format)
+            image_bytes = img_byte_arr.getvalue()
+            
+            # types.Image 객체 생성
+            safe_image = types.Image(
+                image_bytes=image_bytes,
+                mime_type=mime_type
             )
-        )
+            
+            operation = self.genai_client.models.generate_videos(
+                model=model,
+                prompt=prompt,
+                image=safe_image,
+                config=types.GenerateVideosConfig(
+                    resolution=resolution,
+                    aspect_ratio=aspect_ratio
+                )
+            )
+        else:
+            # 2개 이상 이미지인 경우 reference_images 사용
+            reference_images = []
+            for input_path in input_paths[:3]:  # 최대 3개
+                pil_image = Image.open(input_path)
+                img_byte_arr = BytesIO()
+                
+                # MIME 타입 추론
+                mime_type = mimetypes.guess_type(input_path)[0]
+                if not mime_type:
+                    mime_type = "image/jpeg"
+                
+                # 이미지를 바이트로 변환
+                image_format = mime_type.split('/')[-1].upper()
+                if image_format == 'JPG':
+                    image_format = 'JPEG'
+                pil_image.save(img_byte_arr, format=image_format)
+                image_bytes = img_byte_arr.getvalue()
+                
+                # VideoGenerationReferenceImage 생성
+                reference_image = types.VideoGenerationReferenceImage(
+                    image=types.Image(image_bytes=image_bytes, mime_type=mime_type),
+                    reference_type="asset"
+                )
+                reference_images.append(reference_image)
+            
+            operation = self.genai_client.models.generate_videos(
+                model=model,
+                prompt=prompt,
+                reference_images=reference_images,
+                config=types.GenerateVideosConfig(
+                    resolution=resolution,
+                    aspect_ratio=aspect_ratio
+                )
+            )
         
         # 작업 완료 대기
         while not operation.done:
@@ -852,28 +927,31 @@ class GoogleAPIToolsGUI:
             ):
                 continue
             
-            if (chunk.candidates[0].content.parts[0].inline_data and 
-                chunk.candidates[0].content.parts[0].inline_data.data):
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                file_name = f"output_{timestamp}"
-                inline_data = chunk.candidates[0].content.parts[0].inline_data
-                data_buffer = inline_data.data
-                file_extension = mimetypes.guess_extension(inline_data.mime_type)
+            # 모든 parts를 순회하면서 텍스트와 오디오를 각각 처리
+            for part in chunk.candidates[0].content.parts:
+                # 텍스트 응답 처리
+                if part.text is not None:
+                    self.log(f"응답: {part.text[:100]}...")
                 
-                if file_extension is None:
-                    file_extension = ".wav"
-                    data_buffer = self.convert_to_wav(inline_data.data, inline_data.mime_type)
-                
-                output_path = os.path.join(
-                    self.output_directory.get(),
-                    f"{file_name}{file_extension}"
-                )
-                with open(output_path, "wb") as f:
-                    f.write(data_buffer)
-                self.log(f"저장됨: {output_path}")
-            else:
-                if hasattr(chunk, 'text'):
-                    self.log(chunk.text)
+                # 오디오 데이터 처리
+                elif part.inline_data is not None and part.inline_data.data:
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    file_name = f"output_{timestamp}"
+                    inline_data = part.inline_data
+                    data_buffer = inline_data.data
+                    file_extension = mimetypes.guess_extension(inline_data.mime_type)
+                    
+                    if file_extension is None:
+                        file_extension = ".wav"
+                        data_buffer = self.convert_to_wav(inline_data.data, inline_data.mime_type)
+                    
+                    output_path = os.path.join(
+                        self.output_directory.get(),
+                        f"{file_name}{file_extension}"
+                    )
+                    with open(output_path, "wb") as f:
+                        f.write(data_buffer)
+                    self.log(f"저장됨: {output_path}")
     
     def convert_to_wav(self, audio_data: bytes, mime_type: str) -> bytes:
         """오디오 데이터를 WAV 포맷으로 변환"""
