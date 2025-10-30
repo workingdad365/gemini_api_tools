@@ -206,6 +206,8 @@ async def text_to_image(
         )
         
         logger.info("Calling Gemini API...")
+        text_response = ""  # 텍스트 응답 누적
+        
         for chunk in genai_client.models.generate_content_stream(
             model=model,
             contents=contents,
@@ -222,7 +224,8 @@ async def text_to_image(
             for part in chunk.candidates[0].content.parts:
                 # 텍스트 응답 처리
                 if part.text is not None:
-                    logger.info(f"Received text response: {part.text[:100]}...")
+                    text_response += part.text
+                    logger.info(f"Received text response: {part.text}")
                 
                 # 이미지 데이터 처리
                 elif part.inline_data is not None and part.inline_data.data:
@@ -238,11 +241,16 @@ async def text_to_image(
                         f.write(data_buffer)
                     
                     logger.info(f"Image saved successfully: {output_filename}")
-                    return JSONResponse({
+                    response_data = {
                         "status": "success",
                         "message": "이미지가 생성되었습니다.",
                         "output_file": f"/outputs/{output_filename}"
-                    })
+                    }
+                    # 텍스트 응답이 있으면 포함
+                    if text_response:
+                        response_data["llm_response"] = text_response
+                    
+                    return JSONResponse(response_data)
         
         logger.error("No image data received from API")
         raise HTTPException(status_code=500, detail="이미지 생성 실패")
@@ -302,6 +310,8 @@ async def image_to_image(
             model = 'gemini-2.5-flash-image'
             contents = images + [prompt]
         
+        text_response = ""  # 텍스트 응답 누적
+        
         # 스트리밍 방식으로 이미지 생성
         for chunk in genai_client.models.generate_content_stream(
             model=model,
@@ -321,7 +331,8 @@ async def image_to_image(
             for part in chunk.candidates[0].content.parts:
                 # 텍스트 응답 처리
                 if part.text is not None:
-                    logger.info(f"Received text response: {part.text[:100]}...")
+                    text_response += part.text
+                    logger.info(f"Received text response: {part.text}")
                 
                 # 이미지 데이터 처리
                 elif part.inline_data is not None and part.inline_data.data:
@@ -339,11 +350,16 @@ async def image_to_image(
                         if upload_path.exists():
                             upload_path.unlink()
                     
-                    return JSONResponse({
+                    response_data = {
                         "status": "success",
                         "message": "이미지가 생성되었습니다.",
                         "output_file": f"/outputs/{output_filename}"
-                    })
+                    }
+                    # 텍스트 응답이 있으면 포함
+                    if text_response:
+                        response_data["llm_response"] = text_response
+                    
+                    return JSONResponse(response_data)
         
         logger.error("No image data received from API")
         raise HTTPException(status_code=500, detail="이미지 생성 실패: 응답에 이미지 데이터가 없습니다.")

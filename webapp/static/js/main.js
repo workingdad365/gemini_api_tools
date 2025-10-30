@@ -29,11 +29,11 @@ let currentPromptId = null;
 const MAX_FILES = 3;
 
 // 로그 추가 함수
-function log(message) {
+function log(message, isLlmResponse = false) {
     const now = new Date();
     const timestamp = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     const logEntry = document.createElement('div');
-    logEntry.className = 'log-entry';
+    logEntry.className = isLlmResponse ? 'log-entry llm-response' : 'log-entry';
     logEntry.style.whiteSpace = 'pre-wrap'; // 줄바꿈 유지
     logEntry.textContent = `[${timestamp}] ${message}`;
     logContainer.appendChild(logEntry);
@@ -216,6 +216,10 @@ executeBtn.addEventListener('click', async () => {
         }
         
         if (result && result.status === 'success') {
+            // LLM 응답이 있으면 로그에 표시 (파란색으로)
+            if (result.llm_response) {
+                log(`LLM 응답: ${result.llm_response}`, true);
+            }
             log('작업 완료');
             displayResult(result, operation);
         } else {

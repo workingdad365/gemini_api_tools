@@ -66,6 +66,11 @@ body {
     margin-bottom: 0;
 }
 
+.log-entry.llm-response {
+    color: #00ccff;
+    font-weight: 500;
+}
+
 /* 스크롤바 스타일 */
 .log-container::-webkit-scrollbar {
     width: 8px;
