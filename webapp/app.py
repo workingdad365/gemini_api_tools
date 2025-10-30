@@ -5,6 +5,7 @@ import mimetypes
 import struct
 import logging
 import traceback
+import random
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -32,16 +33,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 디렉토리 설정
+BASE_DIR = Path(__file__).resolve().parent
+
 # 환경 변수 로드
 load_dotenv()
 
-# .env 파일을 명시적으로 로드 (루트 디렉토리의 .env)
-env_path = Path(__file__).resolve().parent.parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
-    logger.info(f"Loaded .env from {env_path}")
+# webapp 디렉토리의 .env 파일 로드
+webapp_env_path = BASE_DIR / ".env"
+if webapp_env_path.exists():
+    load_dotenv(webapp_env_path)
+    logger.info(f"Loaded .env from {webapp_env_path}")
 else:
-    logger.warning(f".env file not found at {env_path}")
+    logger.warning(f".env file not found at {webapp_env_path}")
+
+# 루트 디렉토리의 .env 파일도 로드 (fallback)
+root_env_path = BASE_DIR.parent / ".env"
+if root_env_path.exists():
+    load_dotenv(root_env_path)
+    logger.info(f"Loaded .env from {root_env_path}")
 
 app = FastAPI(title="Google Gemini API Tools")
 
@@ -55,7 +65,6 @@ app.add_middleware(
 )
 
 # 디렉토리 설정
-BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 UPLOADS_DIR = BASE_DIR / "uploads"
 OUTPUTS_DIR = BASE_DIR / "outputs"
@@ -66,10 +75,25 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
 
 # API 클라이언트 초기화
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    logger.error("GEMINI_API_KEY not found in environment variables")
-    raise ValueError("GEMINI_API_KEY not found in environment variables")
+# GEMINI_API_KEY_LIST에서 랜덤하게 하나 선택
+api_key_list_str = os.getenv("GEMINI_API_KEY_LIST")
+if api_key_list_str:
+    # 공백으로 분리하여 리스트로 변환
+    api_key_list = api_key_list_str.split()
+    if api_key_list:
+        # 랜덤하게 하나 선택
+        api_key = random.choice(api_key_list)
+        logger.info(f"Selected random API key from list (total: {len(api_key_list)} keys)")
+    else:
+        logger.error("GEMINI_API_KEY_LIST is empty")
+        raise ValueError("GEMINI_API_KEY_LIST is empty")
+else:
+    # fallback: GEMINI_API_KEY 사용
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        logger.error("GEMINI_API_KEY or GEMINI_API_KEY_LIST not found in environment variables")
+        raise ValueError("GEMINI_API_KEY or GEMINI_API_KEY_LIST not found in environment variables")
+    logger.info("Using single GEMINI_API_KEY")
 
 logger.info("API key loaded successfully")
 genai_client = genai.Client(api_key=api_key)
