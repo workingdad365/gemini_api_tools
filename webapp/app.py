@@ -454,19 +454,17 @@ async def text_to_video(
         genai_client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
-        # 비디오 파일 객체 정보 확인 및 저장
-        logger.info(f"Generated video object type: {type(generated_video.video)}")
-        logger.info(f"Generated video object attributes: {dir(generated_video.video)}")
-        
         # 비디오 파일 식별자 저장 (확장 기능용)
-        # name 속성이 없으므로 다른 방법 사용
+        # URI에서 파일 ID 추출: https://...googleapis.com/v1beta/files/FILE_ID:download?alt=media
         video_identifier = None
-        if hasattr(generated_video.video, 'name'):
-            video_identifier = generated_video.video.name
-        elif hasattr(generated_video.video, 'uri'):
-            video_identifier = generated_video.video.uri
-        elif hasattr(generated_video.video, 'resource_name'):
-            video_identifier = generated_video.video.resource_name
+        if hasattr(generated_video.video, 'uri') and generated_video.video.uri:
+            uri = generated_video.video.uri
+            # URI에서 파일 ID 추출
+            if '/files/' in uri:
+                file_id_part = uri.split('/files/')[1]
+                # :download 제거
+                file_id = file_id_part.split(':')[0]
+                video_identifier = f"files/{file_id}"
         
         logger.info(f"Video identifier: {video_identifier}")
         
@@ -614,18 +612,17 @@ async def image_to_video(
         
         video.video.save(str(output_path))
         
-        # 비디오 파일 객체 정보 확인 및 저장
-        logger.info(f"Generated video object type: {type(video.video)}")
-        logger.info(f"Generated video object attributes: {dir(video.video)}")
-        
         # 비디오 파일 식별자 저장 (확장 기능용)
+        # URI에서 파일 ID 추출
         video_identifier = None
-        if hasattr(video.video, 'name'):
-            video_identifier = video.video.name
-        elif hasattr(video.video, 'uri'):
-            video_identifier = video.video.uri
-        elif hasattr(video.video, 'resource_name'):
-            video_identifier = video.video.resource_name
+        if hasattr(video.video, 'uri') and video.video.uri:
+            uri = video.video.uri
+            # URI에서 파일 ID 추출
+            if '/files/' in uri:
+                file_id_part = uri.split('/files/')[1]
+                # :download 제거
+                file_id = file_id_part.split(':')[0]
+                video_identifier = f"files/{file_id}"
         
         logger.info(f"Video identifier: {video_identifier}")
         
@@ -726,13 +723,16 @@ async def extend_video(
         generated_video.video.save(str(output_path))
         
         # 확장된 비디오 파일 식별자 저장 (반복 확장 가능)
+        # URI에서 파일 ID 추출
         extended_video_identifier = None
-        if hasattr(generated_video.video, 'name'):
-            extended_video_identifier = generated_video.video.name
-        elif hasattr(generated_video.video, 'uri'):
-            extended_video_identifier = generated_video.video.uri
-        elif hasattr(generated_video.video, 'resource_name'):
-            extended_video_identifier = generated_video.video.resource_name
+        if hasattr(generated_video.video, 'uri') and generated_video.video.uri:
+            uri = generated_video.video.uri
+            # URI에서 파일 ID 추출
+            if '/files/' in uri:
+                file_id_part = uri.split('/files/')[1]
+                # :download 제거
+                file_id = file_id_part.split(':')[0]
+                extended_video_identifier = f"files/{file_id}"
         
         logger.info(f"Extended video identifier: {extended_video_identifier}")
         logger.info(f"Video extension completed: {output_filename}")
