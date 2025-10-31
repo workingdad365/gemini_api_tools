@@ -1,8 +1,11 @@
 // DOM 요소
 const operationType = document.getElementById('operationType');
 const fileInputCard = document.getElementById('fileInputCard');
+const fileInputCardTitle = document.getElementById('fileInputCardTitle');
 const fileInput = document.getElementById('fileInput');
 const dropZone = document.getElementById('dropZone');
+const dropZoneText = document.getElementById('dropZoneText');
+const fileInputHint = document.getElementById('fileInputHint');
 const selectedFileName = document.getElementById('selectedFileName');
 const imageRatioGroup = document.getElementById('imageRatioGroup');
 const videoSettingsGroup = document.getElementById('videoSettingsGroup');
@@ -26,7 +29,7 @@ const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 
 let selectedFiles = [];
 let currentPromptId = null;
-const MAX_FILES = 3;
+let MAX_FILES = 3;
 
 // 로그 추가 함수
 function log(message, isLlmResponse = false) {
@@ -54,7 +57,7 @@ function logError(message) {
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
-// 이미지 미리보기 업데이트 함수
+// 이미지/비디오 미리보기 업데이트 함수
 function updateImagePreview() {
     imagePreviewContainer.innerHTML = '';
     
@@ -69,16 +72,29 @@ function updateImagePreview() {
         selectedFileName.textContent = `선택된 파일: ${selectedFiles.length}개`;
     }
     
+    const operation = operationType.value;
+    
     selectedFiles.forEach((file, index) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const previewItem = document.createElement('div');
             previewItem.className = 'image-preview-item';
-            previewItem.innerHTML = `
-                <div class="image-number">${index + 1}</div>
-                <img src="${e.target.result}" alt="Preview ${index + 1}">
-                <button class="remove-image" data-index="${index}" title="삭제">×</button>
-            `;
+            
+            // 비디오 파일인 경우
+            if (operation === 'video-to-video' && file.type.startsWith('video/')) {
+                previewItem.innerHTML = `
+                    <div class="image-number">${index + 1}</div>
+                    <video src="${e.target.result}" style="width: 100%; height: 100%; object-fit: cover;"></video>
+                    <button class="remove-image" data-index="${index}" title="삭제">×</button>
+                `;
+            } else {
+                // 이미지 파일인 경우
+                previewItem.innerHTML = `
+                    <div class="image-number">${index + 1}</div>
+                    <img src="${e.target.result}" alt="Preview ${index + 1}">
+                    <button class="remove-image" data-index="${index}" title="삭제">×</button>
+                `;
+            }
             
             const removeBtn = previewItem.querySelector('.remove-image');
             removeBtn.addEventListener('click', () => removeFile(index));
@@ -116,19 +132,35 @@ function addFiles(files) {
 operationType.addEventListener('change', () => {
     const operation = operationType.value;
     
+    // 파일 입력 초기화
+    selectedFiles = [];
+    selectedFileName.textContent = '';
+    imagePreviewContainer.innerHTML = '';
+    fileInputHint.textContent = '';
+    
     // 파일 입력 표시 여부
     if (operation === 'image-to-image' || operation === 'image-to-video') {
         fileInputCard.style.display = 'block';
+        fileInputCardTitle.innerHTML = '<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 3장)';
+        dropZoneText.textContent = '여기에 파일을 드래그앤드롭하거나';
+        fileInput.accept = 'image/*';
+        fileInput.multiple = true;
+        MAX_FILES = 3;
+    } else if (operation === 'video-to-video') {
+        fileInputCard.style.display = 'block';
+        fileInputCardTitle.innerHTML = '<i class="bi bi-file-earmark-play"></i> 입력 비디오 파일 (최대 1개)';
+        dropZoneText.textContent = '여기에 비디오 파일을 드래그앤드롭하거나';
+        fileInputHint.textContent = 'Text To Video/Image to Video를 통해 생성한 Video 파일을 업로드 해주세요';
+        fileInput.accept = 'video/*';
+        fileInput.multiple = false;
+        MAX_FILES = 1;
     } else {
         fileInputCard.style.display = 'none';
-        selectedFiles = [];
-        selectedFileName.textContent = '';
-        imagePreviewContainer.innerHTML = '';
     }
     
     // 설정 표시 여부
     imageRatioGroup.style.display = operation === 'text-to-image' ? 'block' : 'none';
-    videoSettingsGroup.style.display = (operation === 'text-to-video' || operation === 'image-to-video') ? 'block' : 'none';
+    videoSettingsGroup.style.display = (operation === 'text-to-video' || operation === 'image-to-video' || operation === 'video-to-video') ? 'block' : 'none';
     voiceSettingsGroup.style.display = operation === 'text-to-speech' ? 'block' : 'none';
 });
 
@@ -181,7 +213,7 @@ executeBtn.addEventListener('click', async () => {
         return;
     }
     
-    if ((operation === 'image-to-image' || operation === 'image-to-video') && selectedFiles.length === 0) {
+    if ((operation === 'image-to-image' || operation === 'image-to-video' || operation === 'video-to-video') && selectedFiles.length === 0) {
         alert('입력 파일을 선택하세요.');
         return;
     }
@@ -209,6 +241,9 @@ executeBtn.addEventListener('click', async () => {
                 break;
             case 'image-to-video':
                 result = await executeImageToVideo(prompt, selectedFiles, videoResolution.value, videoAspectRatio.value);
+                break;
+            case 'video-to-video':
+                result = await executeVideoToVideo(prompt, selectedFiles, videoResolution.value, videoAspectRatio.value);
                 break;
             case 'text-to-speech':
                 result = await executeTextToSpeech(prompt, voiceName.value);
@@ -327,6 +362,31 @@ async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
     formData.append('aspect_ratio', aspectRatio);
     
     const response = await fetch('/api/image-to-video', {
+        method: 'POST',
+        body: formData
+    });
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+        const error = new Error(result.detail || '작업 실패');
+        error.details = result.detail;
+        throw error;
+    }
+    
+    return result;
+}
+
+async function executeVideoToVideo(prompt, files, resolution, aspectRatio) {
+    log('비디오 확장 중... (시간이 다소 걸릴 수 있습니다)');
+    
+    const formData = new FormData();
+    formData.append('prompt', prompt);
+    formData.append('file', files[0]);
+    formData.append('resolution', resolution);
+    formData.append('aspect_ratio', aspectRatio);
+    
+    const response = await fetch('/api/video-to-video', {
         method: 'POST',
         body: formData
     });

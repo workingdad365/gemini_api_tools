@@ -614,6 +614,104 @@ async def image_to_video(
                 upload_path.unlink()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/video-to-video")
+async def video_to_video(
+    prompt: str = Form(...),
+    file: UploadFile = File(...),
+    resolution: str = Form("720p"),
+    aspect_ratio: str = Form("16:9")
+):
+    """Video to Video 작업 (비디오 확장)"""
+    upload_path = None
+    try:
+        logger.info(f"Video to Video request - prompt length: {len(prompt)}, resolution: {resolution}, aspect_ratio: {aspect_ratio}")
+        
+        # 파일 저장
+        upload_path = UPLOADS_DIR / file.filename
+        with open(upload_path, "wb") as buffer:
+            buffer.write(await file.read())
+        
+        logger.info(f"Uploaded video file: {file.filename}")
+        
+        # 비디오 파일 업로드
+        uploaded_file = genai_client.files.upload(file=str(upload_path))
+        logger.info(f"File uploaded to Gemini API: {uploaded_file.name}")
+        
+        model = "veo-3.1-generate-preview"
+        
+        # 비디오 확장 작업 시작
+        operation = genai_client.models.generate_videos(
+            model=model,
+            prompt=prompt,
+            video=uploaded_file,
+            config=types.GenerateVideosConfig(
+                resolution=resolution,
+                aspect_ratio=aspect_ratio
+            )
+        )
+        
+        logger.info("Video extension operation started")
+        
+        # 작업 완료 대기
+        while not operation.done:
+            time.sleep(10)
+            operation = genai_client.operations.get(operation)
+            logger.info("Waiting for video extension to complete...")
+        
+        # 작업 결과 확인
+        if hasattr(operation, 'error') and operation.error:
+            error_msg = f"Video extension failed: {operation.error}"
+            logger.error(error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
+        
+        if not operation.response or not operation.response.generated_videos:
+            # RAI 필터링 이유 확인
+            error_detail = "비디오 확장 실패"
+            if operation.response and hasattr(operation.response, 'rai_media_filtered_reasons'):
+                filtered_reasons = operation.response.rai_media_filtered_reasons
+                if filtered_reasons:
+                    reasons_text = "\n".join(filtered_reasons)
+                    error_detail = f"비디오 확장 실패:\n{reasons_text}"
+                    logger.error(f"No videos generated. Filtered reasons: {filtered_reasons}")
+                else:
+                    error_detail = "비디오 확장 실패: 응답에 비디오가 없습니다."
+                    logger.error(f"No videos generated. Operation response: {operation.response}")
+            else:
+                error_detail = "비디오 확장 실패: 응답에 비디오가 없습니다."
+                logger.error(f"No videos generated. Operation response: {operation.response}")
+            raise HTTPException(status_code=500, detail=error_detail)
+        
+        if len(operation.response.generated_videos) == 0:
+            logger.error("Generated videos list is empty")
+            raise HTTPException(status_code=500, detail="비디오 확장 실패: 생성된 비디오가 없습니다.")
+        
+        # 비디오 다운로드
+        generated_video = operation.response.generated_videos[0]
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        output_filename = f"output_{timestamp}.mp4"
+        output_path = OUTPUTS_DIR / output_filename
+        
+        genai_client.files.download(file=generated_video.video)
+        generated_video.video.save(str(output_path))
+        
+        logger.info(f"Video extension completed: {output_filename}")
+        
+        # 업로드된 파일 삭제
+        if upload_path and upload_path.exists():
+            upload_path.unlink()
+        
+        return JSONResponse({
+            "status": "success",
+            "message": "비디오가 확장되었습니다.",
+            "output_file": f"/outputs/{output_filename}"
+        })
+    
+    except Exception as e:
+        logger.error(f"Video to Video error: {str(e)}")
+        if upload_path and upload_path.exists():
+            upload_path.unlink()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/text-to-speech")
 async def text_to_speech(
     prompt: str = Form(...),
