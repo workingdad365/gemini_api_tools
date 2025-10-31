@@ -128,8 +128,8 @@ function addFiles(files) {
     log(`파일 추가됨: ${newFiles.length}개 (전체: ${selectedFiles.length}개)`);
 }
 
-// 작업 유형 변경 시
-operationType.addEventListener('change', () => {
+// 작업 유형에 따른 UI 업데이트 함수
+function updateUIForOperation() {
     const operation = operationType.value;
     
     // 파일 입력 초기화
@@ -162,7 +162,10 @@ operationType.addEventListener('change', () => {
     imageRatioGroup.style.display = operation === 'text-to-image' ? 'block' : 'none';
     videoSettingsGroup.style.display = (operation === 'text-to-video' || operation === 'image-to-video' || operation === 'video-to-video') ? 'block' : 'none';
     voiceSettingsGroup.style.display = operation === 'text-to-speech' ? 'block' : 'none';
-});
+}
+
+// 작업 유형 변경 시
+operationType.addEventListener('change', updateUIForOperation);
 
 // 파일 선택
 fileInput.addEventListener('change', (e) => {
@@ -572,5 +575,6 @@ loadPromptBtn.addEventListener('click', async () => {
 });
 
 // 초기화
+updateUIForOperation();
 log('웹 애플리케이션 준비 완료');
 
