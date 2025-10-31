@@ -628,14 +628,24 @@ async def video_to_video(
         
         # 파일 저장
         upload_path = UPLOADS_DIR / file.filename
+        video_bytes = await file.read()
         with open(upload_path, "wb") as buffer:
-            buffer.write(await file.read())
+            buffer.write(video_bytes)
         
         logger.info(f"Uploaded video file: {file.filename}")
         
-        # 비디오 파일 업로드
-        uploaded_file = genai_client.files.upload(file=str(upload_path))
-        logger.info(f"File uploaded to Gemini API: {uploaded_file.name}")
+        # MIME 타입 추론
+        mime_type = mimetypes.guess_type(file.filename)[0]
+        if not mime_type or not mime_type.startswith('video/'):
+            mime_type = "video/mp4"
+        
+        logger.info(f"Video MIME type: {mime_type}")
+        
+        # types.Video 객체 생성
+        video_object = types.Video(
+            video_bytes=video_bytes,
+            mime_type=mime_type
+        )
         
         model = "veo-3.1-generate-preview"
         
@@ -643,7 +653,7 @@ async def video_to_video(
         operation = genai_client.models.generate_videos(
             model=model,
             prompt=prompt,
-            video=uploaded_file,
+            video=video_object,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
