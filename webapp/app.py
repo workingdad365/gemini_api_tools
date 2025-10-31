@@ -454,10 +454,15 @@ async def text_to_video(
         genai_client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
+        # 비디오 파일 객체의 name 저장 (확장 기능용)
+        video_file_name = generated_video.video.name
+        logger.info(f"Generated video file name: {video_file_name}")
+        
         return JSONResponse({
             "status": "success",
             "message": "비디오가 생성되었습니다.",
-            "output_file": f"/outputs/{output_filename}"
+            "output_file": f"/outputs/{output_filename}",
+            "video_file_name": video_file_name
         })
     
     except Exception as e:
@@ -596,6 +601,10 @@ async def image_to_video(
         
         video.video.save(str(output_path))
         
+        # 비디오 파일 객체의 name 저장 (확장 기능용)
+        video_file_name = video.video.name
+        logger.info(f"Generated video file name: {video_file_name}")
+        
         # 업로드된 파일 삭제
         for upload_path in upload_paths:
             if upload_path.exists():
@@ -604,7 +613,8 @@ async def image_to_video(
         return JSONResponse({
             "status": "success",
             "message": "비디오가 생성되었습니다.",
-            "output_file": f"/outputs/{output_filename}"
+            "output_file": f"/outputs/{output_filename}",
+            "video_file_name": video_file_name
         })
     
     except Exception as e:
@@ -614,38 +624,24 @@ async def image_to_video(
                 upload_path.unlink()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/video-to-video")
-async def video_to_video(
+@app.post("/api/extend-video")
+async def extend_video(
     prompt: str = Form(...),
-    file: UploadFile = File(...),
+    video_file_name: str = Form(...),
     resolution: str = Form("720p"),
     aspect_ratio: str = Form("16:9")
 ):
-    """Video to Video 작업 (비디오 확장)"""
-    upload_path = None
+    """비디오 확장 작업"""
     try:
-        logger.info(f"Video to Video request - prompt length: {len(prompt)}, resolution: {resolution}, aspect_ratio: {aspect_ratio}")
+        logger.info(f"Video extension request - prompt length: {len(prompt)}, video_file_name: {video_file_name}, resolution: {resolution}, aspect_ratio: {aspect_ratio}")
         
-        # 파일 저장
-        upload_path = UPLOADS_DIR / file.filename
-        video_bytes = await file.read()
-        with open(upload_path, "wb") as buffer:
-            buffer.write(video_bytes)
-        
-        logger.info(f"Uploaded video file: {file.filename}")
-        
-        # MIME 타입 추론
-        mime_type = mimetypes.guess_type(file.filename)[0]
-        if not mime_type or not mime_type.startswith('video/'):
-            mime_type = "video/mp4"
-        
-        logger.info(f"Video MIME type: {mime_type}")
-        
-        # types.Video 객체 생성
-        video_object = types.Video(
-            video_bytes=video_bytes,
-            mime_type=mime_type
-        )
+        # Gemini API에 저장된 파일 가져오기
+        try:
+            video_file = genai_client.files.get(name=video_file_name)
+            logger.info(f"Retrieved video file from Gemini API: {video_file.name}")
+        except Exception as e:
+            logger.error(f"Failed to retrieve video file: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"비디오 파일을 찾을 수 없습니다: {str(e)}")
         
         model = "veo-3.1-generate-preview"
         
@@ -653,7 +649,7 @@ async def video_to_video(
         operation = genai_client.models.generate_videos(
             model=model,
             prompt=prompt,
-            video=video_object,
+            video=video_file,
             config=types.GenerateVideosConfig(
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
@@ -704,22 +700,20 @@ async def video_to_video(
         genai_client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
+        # 확장된 비디오 파일 객체의 name 저장 (반복 확장 가능)
+        extended_video_file_name = generated_video.video.name
+        logger.info(f"Extended video file name: {extended_video_file_name}")
         logger.info(f"Video extension completed: {output_filename}")
-        
-        # 업로드된 파일 삭제
-        if upload_path and upload_path.exists():
-            upload_path.unlink()
         
         return JSONResponse({
             "status": "success",
             "message": "비디오가 확장되었습니다.",
-            "output_file": f"/outputs/{output_filename}"
+            "output_file": f"/outputs/{output_filename}",
+            "video_file_name": extended_video_file_name
         })
     
     except Exception as e:
-        logger.error(f"Video to Video error: {str(e)}")
-        if upload_path and upload_path.exists():
-            upload_path.unlink()
+        logger.error(f"Video extension error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/text-to-speech")

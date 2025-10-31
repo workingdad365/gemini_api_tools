@@ -30,6 +30,7 @@ const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 let selectedFiles = [];
 let currentPromptId = null;
 let MAX_FILES = 3;
+let lastGeneratedVideoFile = null; // 마지막 생성된 비디오 파일 정보 저장
 
 // 로그 추가 함수
 function log(message, isLlmResponse = false) {
@@ -138,6 +139,9 @@ function updateUIForOperation() {
     imagePreviewContainer.innerHTML = '';
     fileInputHint.textContent = '';
     
+    // 비디오 확장 관련 초기화
+    lastGeneratedVideoFile = null;
+    
     // 파일 입력 표시 여부
     if (operation === 'image-to-image' || operation === 'image-to-video') {
         fileInputCard.style.display = 'block';
@@ -146,21 +150,13 @@ function updateUIForOperation() {
         fileInput.accept = 'image/*';
         fileInput.multiple = true;
         MAX_FILES = 3;
-    } else if (operation === 'video-to-video') {
-        fileInputCard.style.display = 'block';
-        fileInputCardTitle.innerHTML = '<i class="bi bi-file-earmark-play"></i> 입력 비디오 파일 (최대 1개)';
-        dropZoneText.textContent = '여기에 비디오 파일을 드래그앤드롭하거나';
-        fileInputHint.textContent = 'Text To Video/Image to Video를 통해 생성한 Video 파일을 업로드 해주세요';
-        fileInput.accept = 'video/*';
-        fileInput.multiple = false;
-        MAX_FILES = 1;
     } else {
         fileInputCard.style.display = 'none';
     }
     
     // 설정 표시 여부
     imageRatioGroup.style.display = operation === 'text-to-image' ? 'block' : 'none';
-    videoSettingsGroup.style.display = (operation === 'text-to-video' || operation === 'image-to-video' || operation === 'video-to-video') ? 'block' : 'none';
+    videoSettingsGroup.style.display = (operation === 'text-to-video' || operation === 'image-to-video') ? 'block' : 'none';
     voiceSettingsGroup.style.display = operation === 'text-to-speech' ? 'block' : 'none';
 }
 
@@ -216,7 +212,7 @@ executeBtn.addEventListener('click', async () => {
         return;
     }
     
-    if ((operation === 'image-to-image' || operation === 'image-to-video' || operation === 'video-to-video') && selectedFiles.length === 0) {
+    if ((operation === 'image-to-image' || operation === 'image-to-video') && selectedFiles.length === 0) {
         alert('입력 파일을 선택하세요.');
         return;
     }
@@ -244,9 +240,6 @@ executeBtn.addEventListener('click', async () => {
                 break;
             case 'image-to-video':
                 result = await executeImageToVideo(prompt, selectedFiles, videoResolution.value, videoAspectRatio.value);
-                break;
-            case 'video-to-video':
-                result = await executeVideoToVideo(prompt, selectedFiles, videoResolution.value, videoAspectRatio.value);
                 break;
             case 'text-to-speech':
                 result = await executeTextToSpeech(prompt, voiceName.value);
@@ -347,6 +340,11 @@ async function executeTextToVideo(prompt, resolution, aspectRatio) {
         throw error;
     }
     
+    // 비디오 파일 정보 저장 (확장 기능용)
+    if (result.video_file_name) {
+        lastGeneratedVideoFile = result.video_file_name;
+    }
+    
     return result;
 }
 
@@ -377,19 +375,24 @@ async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
         throw error;
     }
     
+    // 비디오 파일 정보 저장 (확장 기능용)
+    if (result.video_file_name) {
+        lastGeneratedVideoFile = result.video_file_name;
+    }
+    
     return result;
 }
 
-async function executeVideoToVideo(prompt, files, resolution, aspectRatio) {
+async function executeVideoExtension(prompt, videoFileName, resolution, aspectRatio) {
     log('비디오 확장 중... (시간이 다소 걸릴 수 있습니다)');
     
     const formData = new FormData();
     formData.append('prompt', prompt);
-    formData.append('file', files[0]);
+    formData.append('video_file_name', videoFileName);
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
-    const response = await fetch('/api/video-to-video', {
+    const response = await fetch('/api/extend-video', {
         method: 'POST',
         body: formData
     });
@@ -400,6 +403,11 @@ async function executeVideoToVideo(prompt, files, resolution, aspectRatio) {
         const error = new Error(result.detail || '작업 실패');
         error.details = result.detail;
         throw error;
+    }
+    
+    // 확장된 비디오 파일 정보 저장 (반복 확장 가능)
+    if (result.video_file_name) {
+        lastGeneratedVideoFile = result.video_file_name;
     }
     
     return result;
@@ -449,12 +457,31 @@ function displayResult(result, operation) {
             <video controls class="w-100 mb-3">
                 <source src="${result.output_file}" type="video/mp4">
             </video>
-            <div>
+            <div class="mb-3">
                 <a href="${result.output_file}" download class="btn btn-primary">
                     <i class="bi bi-download"></i> 다운로드
                 </a>
             </div>
         `;
+        
+        // 비디오 확장 기능 추가 (Text to Video, Image to Video인 경우)
+        if (operation === 'text-to-video' || operation === 'image-to-video') {
+            content += `
+                <div class="card mt-3">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0"><i class="bi bi-arrow-right-circle"></i> 비디오 확장</h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-2">추가 프롬프트를 입력하여 비디오를 확장할 수 있습니다. (최대 141초까지 반복 가능)</p>
+                        <textarea class="form-control mb-2" id="extendPrompt" rows="3" 
+                            placeholder="확장할 내용에 대한 프롬프트를 입력하세요..."></textarea>
+                        <button class="btn btn-info" id="extendVideoBtn">
+                            <i class="bi bi-plus-circle"></i> 비디오 확장 실행
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
     } else if (fileType === 'audio') {
         content = `
             <audio controls class="w-100 mb-3">
@@ -469,6 +496,68 @@ function displayResult(result, operation) {
     }
     
     resultContent.innerHTML = content;
+    
+    // 비디오 확장 버튼 이벤트 리스너 추가
+    if (fileType === 'video' && (operation === 'text-to-video' || operation === 'image-to-video')) {
+        const extendBtn = document.getElementById('extendVideoBtn');
+        if (extendBtn) {
+            extendBtn.addEventListener('click', handleVideoExtension);
+        }
+    }
+}
+
+// 비디오 확장 처리 함수
+async function handleVideoExtension() {
+    const extendPrompt = document.getElementById('extendPrompt').value.trim();
+    
+    if (!extendPrompt) {
+        alert('확장할 내용에 대한 프롬프트를 입력하세요.');
+        return;
+    }
+    
+    if (!lastGeneratedVideoFile) {
+        alert('확장할 비디오 정보가 없습니다.');
+        return;
+    }
+    
+    // UI 상태 변경
+    executeBtn.disabled = true;
+    document.getElementById('extendVideoBtn').disabled = true;
+    progressAlert.classList.remove('d-none');
+    progressMessage.textContent = '비디오 확장 중...';
+    
+    log('비디오 확장 작업 시작');
+    
+    try {
+        const result = await executeVideoExtension(
+            extendPrompt,
+            lastGeneratedVideoFile,
+            videoResolution.value,
+            videoAspectRatio.value
+        );
+        
+        if (result && result.status === 'success') {
+            log('비디오 확장 완료');
+            
+            // 결과 업데이트
+            const operation = operationType.value;
+            displayResult(result, operation);
+            
+            // 확장 프롬프트 초기화
+            document.getElementById('extendPrompt').value = '';
+        }
+    } catch (error) {
+        if (error.details) {
+            logError(`비디오 확장 오류:\n${error.details}`);
+        } else {
+            logError(`비디오 확장 오류: ${error.message}`);
+        }
+        alert('비디오 확장 실패: 자세한 내용은 로그를 확인하세요.');
+    } finally {
+        executeBtn.disabled = false;
+        document.getElementById('extendVideoBtn').disabled = false;
+        progressAlert.classList.add('d-none');
+    }
 }
 
 // 프롬프트 저장
