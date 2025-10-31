@@ -341,8 +341,12 @@ async function executeTextToVideo(prompt, resolution, aspectRatio) {
     }
     
     // 비디오 파일 정보 저장 (확장 기능용)
-    if (result.video_file_name) {
-        lastGeneratedVideoFile = result.video_file_name;
+    log(`Response video_identifier: ${result.video_identifier}`);
+    if (result.video_identifier) {
+        lastGeneratedVideoFile = result.video_identifier;
+        log(`Saved video identifier: ${lastGeneratedVideoFile}`);
+    } else {
+        log(`No video_identifier in response`);
     }
     
     return result;
@@ -376,8 +380,12 @@ async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
     }
     
     // 비디오 파일 정보 저장 (확장 기능용)
+    log(`Response video_identifier: ${result.video_identifier}`);
     if (result.video_identifier) {
         lastGeneratedVideoFile = result.video_identifier;
+        log(`Saved video identifier: ${lastGeneratedVideoFile}`);
+    } else {
+        log(`No video_identifier in response`);
     }
     
     return result;
@@ -514,6 +522,8 @@ async function handleVideoExtension() {
         alert('확장할 내용에 대한 프롬프트를 입력하세요.');
         return;
     }
+    
+    log(`Current lastGeneratedVideoFile: ${lastGeneratedVideoFile}`);
     
     if (!lastGeneratedVideoFile) {
         alert('확장할 비디오 정보가 없습니다.');
