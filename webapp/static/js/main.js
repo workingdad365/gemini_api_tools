@@ -473,6 +473,8 @@ function displayResult(result, operation) {
         `;
         
         // 비디오 확장 기능 추가 (Text to Video, Image to Video인 경우)
+        // TODO: 비디오 확장 기능 - 나중에 구현
+        /*
         if (operation === 'text-to-video' || operation === 'image-to-video') {
             content += `
                 <div class="card mt-3">
@@ -490,6 +492,7 @@ function displayResult(result, operation) {
                 </div>
             `;
         }
+        */
     } else if (fileType === 'audio') {
         content = `
             <audio controls class="w-100 mb-3">
@@ -506,12 +509,15 @@ function displayResult(result, operation) {
     resultContent.innerHTML = content;
     
     // 비디오 확장 버튼 이벤트 리스너 추가
+    // TODO: 비디오 확장 기능 - 나중에 구현
+    /*
     if (fileType === 'video' && (operation === 'text-to-video' || operation === 'image-to-video')) {
         const extendBtn = document.getElementById('extendVideoBtn');
         if (extendBtn) {
             extendBtn.addEventListener('click', handleVideoExtension);
         }
     }
+    */
 }
 
 // 비디오 확장 처리 함수
