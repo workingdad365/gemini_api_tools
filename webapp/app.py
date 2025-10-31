@@ -454,15 +454,28 @@ async def text_to_video(
         genai_client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
-        # 비디오 파일 객체의 name 저장 (확장 기능용)
-        video_file_name = generated_video.video.name
-        logger.info(f"Generated video file name: {video_file_name}")
+        # 비디오 파일 객체 정보 확인 및 저장
+        logger.info(f"Generated video object type: {type(generated_video.video)}")
+        logger.info(f"Generated video object attributes: {dir(generated_video.video)}")
+        
+        # 비디오 파일 식별자 저장 (확장 기능용)
+        # name 속성이 없으므로 다른 방법 사용
+        video_identifier = None
+        if hasattr(generated_video.video, 'name'):
+            video_identifier = generated_video.video.name
+        elif hasattr(generated_video.video, 'uri'):
+            video_identifier = generated_video.video.uri
+        elif hasattr(generated_video.video, 'resource_name'):
+            video_identifier = generated_video.video.resource_name
+        
+        logger.info(f"Video identifier: {video_identifier}")
         
         return JSONResponse({
             "status": "success",
             "message": "비디오가 생성되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_file_name": video_file_name
+            "video_identifier": video_identifier,
+            "video_object": str(generated_video.video) if video_identifier is None else None
         })
     
     except Exception as e:
@@ -601,9 +614,20 @@ async def image_to_video(
         
         video.video.save(str(output_path))
         
-        # 비디오 파일 객체의 name 저장 (확장 기능용)
-        video_file_name = video.video.name
-        logger.info(f"Generated video file name: {video_file_name}")
+        # 비디오 파일 객체 정보 확인 및 저장
+        logger.info(f"Generated video object type: {type(video.video)}")
+        logger.info(f"Generated video object attributes: {dir(video.video)}")
+        
+        # 비디오 파일 식별자 저장 (확장 기능용)
+        video_identifier = None
+        if hasattr(video.video, 'name'):
+            video_identifier = video.video.name
+        elif hasattr(video.video, 'uri'):
+            video_identifier = video.video.uri
+        elif hasattr(video.video, 'resource_name'):
+            video_identifier = video.video.resource_name
+        
+        logger.info(f"Video identifier: {video_identifier}")
         
         # 업로드된 파일 삭제
         for upload_path in upload_paths:
@@ -614,7 +638,8 @@ async def image_to_video(
             "status": "success",
             "message": "비디오가 생성되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_file_name": video_file_name
+            "video_identifier": video_identifier,
+            "video_object": str(video.video) if video_identifier is None else None
         })
     
     except Exception as e:
@@ -627,17 +652,17 @@ async def image_to_video(
 @app.post("/api/extend-video")
 async def extend_video(
     prompt: str = Form(...),
-    video_file_name: str = Form(...),
+    video_identifier: str = Form(...),
     resolution: str = Form("720p"),
     aspect_ratio: str = Form("16:9")
 ):
     """비디오 확장 작업"""
     try:
-        logger.info(f"Video extension request - prompt length: {len(prompt)}, video_file_name: {video_file_name}, resolution: {resolution}, aspect_ratio: {aspect_ratio}")
+        logger.info(f"Video extension request - prompt length: {len(prompt)}, video_identifier: {video_identifier}, resolution: {resolution}, aspect_ratio: {aspect_ratio}")
         
         # Gemini API에 저장된 파일 가져오기
         try:
-            video_file = genai_client.files.get(name=video_file_name)
+            video_file = genai_client.files.get(name=video_identifier)
             logger.info(f"Retrieved video file from Gemini API: {video_file.name}")
         except Exception as e:
             logger.error(f"Failed to retrieve video file: {str(e)}")
@@ -700,16 +725,23 @@ async def extend_video(
         genai_client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
-        # 확장된 비디오 파일 객체의 name 저장 (반복 확장 가능)
-        extended_video_file_name = generated_video.video.name
-        logger.info(f"Extended video file name: {extended_video_file_name}")
+        # 확장된 비디오 파일 식별자 저장 (반복 확장 가능)
+        extended_video_identifier = None
+        if hasattr(generated_video.video, 'name'):
+            extended_video_identifier = generated_video.video.name
+        elif hasattr(generated_video.video, 'uri'):
+            extended_video_identifier = generated_video.video.uri
+        elif hasattr(generated_video.video, 'resource_name'):
+            extended_video_identifier = generated_video.video.resource_name
+        
+        logger.info(f"Extended video identifier: {extended_video_identifier}")
         logger.info(f"Video extension completed: {output_filename}")
         
         return JSONResponse({
             "status": "success",
             "message": "비디오가 확장되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_file_name": extended_video_file_name
+            "video_identifier": extended_video_identifier
         })
     
     except Exception as e:

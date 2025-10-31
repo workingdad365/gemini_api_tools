@@ -376,19 +376,19 @@ async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
     }
     
     // 비디오 파일 정보 저장 (확장 기능용)
-    if (result.video_file_name) {
-        lastGeneratedVideoFile = result.video_file_name;
+    if (result.video_identifier) {
+        lastGeneratedVideoFile = result.video_identifier;
     }
     
     return result;
 }
 
-async function executeVideoExtension(prompt, videoFileName, resolution, aspectRatio) {
+async function executeVideoExtension(prompt, videoIdentifier, resolution, aspectRatio) {
     log('비디오 확장 중... (시간이 다소 걸릴 수 있습니다)');
     
     const formData = new FormData();
     formData.append('prompt', prompt);
-    formData.append('video_file_name', videoFileName);
+    formData.append('video_identifier', videoIdentifier);
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
@@ -406,8 +406,8 @@ async function executeVideoExtension(prompt, videoFileName, resolution, aspectRa
     }
     
     // 확장된 비디오 파일 정보 저장 (반복 확장 가능)
-    if (result.video_file_name) {
-        lastGeneratedVideoFile = result.video_file_name;
+    if (result.video_identifier) {
+        lastGeneratedVideoFile = result.video_identifier;
     }
     
     return result;
