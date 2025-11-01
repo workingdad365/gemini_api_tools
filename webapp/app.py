@@ -6,6 +6,7 @@ import struct
 import logging
 import traceback
 import random
+import uuid
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -98,6 +99,10 @@ else:
 logger.info("API key loaded successfully")
 genai_client = genai.Client(api_key=api_key)
 logger.info("Gemini client initialized successfully")
+
+# 비디오 객체 저장소 (메모리)
+# UUID -> generated_video 객체 매핑
+video_objects_cache = {}
 
 # 정적 파일 제공
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -454,26 +459,16 @@ async def text_to_video(
         genai_client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
-        # 비디오 파일 식별자 저장 (확장 기능용)
-        # URI에서 파일 ID 추출: https://...googleapis.com/v1beta/files/FILE_ID:download?alt=media
-        video_identifier = None
-        if hasattr(generated_video.video, 'uri') and generated_video.video.uri:
-            uri = generated_video.video.uri
-            # URI에서 파일 ID 추출
-            if '/files/' in uri:
-                file_id_part = uri.split('/files/')[1]
-                # :download 제거
-                file_id = file_id_part.split(':')[0]
-                video_identifier = f"files/{file_id}"
-        
-        logger.info(f"Video identifier: {video_identifier}")
+        # 비디오 객체를 메모리에 저장 (확장 기능용)
+        video_uuid = str(uuid.uuid4())
+        video_objects_cache[video_uuid] = generated_video
+        logger.info(f"Saved video object with UUID: {video_uuid}")
         
         return JSONResponse({
             "status": "success",
             "message": "비디오가 생성되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_identifier": video_identifier,
-            "video_object": str(generated_video.video) if video_identifier is None else None
+            "video_uuid": video_uuid
         })
     
     except Exception as e:
@@ -612,19 +607,10 @@ async def image_to_video(
         
         video.video.save(str(output_path))
         
-        # 비디오 파일 식별자 저장 (확장 기능용)
-        # URI에서 파일 ID 추출
-        video_identifier = None
-        if hasattr(video.video, 'uri') and video.video.uri:
-            uri = video.video.uri
-            # URI에서 파일 ID 추출
-            if '/files/' in uri:
-                file_id_part = uri.split('/files/')[1]
-                # :download 제거
-                file_id = file_id_part.split(':')[0]
-                video_identifier = f"files/{file_id}"
-        
-        logger.info(f"Video identifier: {video_identifier}")
+        # 비디오 객체를 메모리에 저장 (확장 기능용)
+        video_uuid = str(uuid.uuid4())
+        video_objects_cache[video_uuid] = video
+        logger.info(f"Saved video object with UUID: {video_uuid}")
         
         # 업로드된 파일 삭제
         for upload_path in upload_paths:
@@ -635,8 +621,7 @@ async def image_to_video(
             "status": "success",
             "message": "비디오가 생성되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_identifier": video_identifier,
-            "video_object": str(video.video) if video_identifier is None else None
+            "video_uuid": video_uuid
         })
     
     except Exception as e:
@@ -649,30 +634,31 @@ async def image_to_video(
 @app.post("/api/extend-video")
 async def extend_video(
     prompt: str = Form(...),
-    video_identifier: str = Form(...),
+    video_uuid: str = Form(...),
     resolution: str = Form("720p"),
     aspect_ratio: str = Form("16:9")
 ):
     """비디오 확장 작업"""
     try:
-        logger.info(f"Video extension request - prompt length: {len(prompt)}, video_identifier: {video_identifier}, resolution: {resolution}, aspect_ratio: {aspect_ratio}")
+        logger.info(f"Video extension request - prompt length: {len(prompt)}, video_uuid: {video_uuid}, resolution: {resolution}, aspect_ratio: {aspect_ratio}")
         
-        # Gemini API에 저장된 파일 가져오기
-        try:
-            video_file = genai_client.files.get(name=video_identifier)
-            logger.info(f"Retrieved video file from Gemini API: {video_file.name}")
-        except Exception as e:
-            logger.error(f"Failed to retrieve video file: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"비디오 파일을 찾을 수 없습니다: {str(e)}")
+        # 메모리에서 비디오 객체 가져오기
+        if video_uuid not in video_objects_cache:
+            logger.error(f"Video UUID not found in cache: {video_uuid}")
+            raise HTTPException(status_code=400, detail=f"비디오를 찾을 수 없습니다. UUID: {video_uuid}")
+        
+        previous_video = video_objects_cache[video_uuid]
+        logger.info(f"Retrieved video object from cache: {video_uuid}")
         
         model = "veo-3.1-generate-preview"
         
-        # 비디오 확장 작업 시작
+        # 비디오 확장 작업 시작 (previous_video.video 전달)
         operation = genai_client.models.generate_videos(
             model=model,
             prompt=prompt,
-            video=video_file,
+            video=previous_video.video,
             config=types.GenerateVideosConfig(
+                number_of_videos=1,
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
             )
@@ -722,26 +708,22 @@ async def extend_video(
         genai_client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
-        # 확장된 비디오 파일 식별자 저장 (반복 확장 가능)
-        # URI에서 파일 ID 추출
-        extended_video_identifier = None
-        if hasattr(generated_video.video, 'uri') and generated_video.video.uri:
-            uri = generated_video.video.uri
-            # URI에서 파일 ID 추출
-            if '/files/' in uri:
-                file_id_part = uri.split('/files/')[1]
-                # :download 제거
-                file_id = file_id_part.split(':')[0]
-                extended_video_identifier = f"files/{file_id}"
-        
-        logger.info(f"Extended video identifier: {extended_video_identifier}")
+        # 확장된 비디오 객체를 메모리에 저장 (반복 확장 가능)
+        extended_video_uuid = str(uuid.uuid4())
+        video_objects_cache[extended_video_uuid] = generated_video
+        logger.info(f"Saved extended video object with UUID: {extended_video_uuid}")
         logger.info(f"Video extension completed: {output_filename}")
+        
+        # 이전 UUID는 캐시에서 제거 (메모리 관리)
+        if video_uuid in video_objects_cache:
+            del video_objects_cache[video_uuid]
+            logger.info(f"Removed previous video object from cache: {video_uuid}")
         
         return JSONResponse({
             "status": "success",
             "message": "비디오가 확장되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_identifier": extended_video_identifier
+            "video_uuid": extended_video_uuid
         })
     
     except Exception as e:

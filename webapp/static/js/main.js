@@ -30,7 +30,8 @@ const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 let selectedFiles = [];
 let currentPromptId = null;
 let MAX_FILES = 3;
-let lastGeneratedVideoFile = null; // 마지막 생성된 비디오 파일 정보 저장
+let lastGeneratedVideoUUID = null; // 마지막 생성된 비디오 UUID 저장
+let lastVideoResolution = null; // 마지막 생성된 비디오 해상도 저장
 
 // 로그 추가 함수
 function log(message, isLlmResponse = false) {
@@ -140,7 +141,8 @@ function updateUIForOperation() {
     fileInputHint.textContent = '';
     
     // 비디오 확장 관련 초기화
-    lastGeneratedVideoFile = null;
+    lastGeneratedVideoUUID = null;
+    lastVideoResolution = null;
     
     // 파일 입력 표시 여부
     if (operation === 'image-to-image' || operation === 'image-to-video') {
@@ -340,13 +342,14 @@ async function executeTextToVideo(prompt, resolution, aspectRatio) {
         throw error;
     }
     
-    // 비디오 파일 정보 저장 (확장 기능용)
-    log(`Response video_identifier: ${result.video_identifier}`);
-    if (result.video_identifier) {
-        lastGeneratedVideoFile = result.video_identifier;
-        log(`Saved video identifier: ${lastGeneratedVideoFile}`);
+    // 비디오 UUID 및 해상도 저장 (확장 기능용)
+    log(`Response video_uuid: ${result.video_uuid}`);
+    if (result.video_uuid) {
+        lastGeneratedVideoUUID = result.video_uuid;
+        lastVideoResolution = resolution;
+        log(`Saved video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
     } else {
-        log(`No video_identifier in response`);
+        log(`No video_uuid in response`);
     }
     
     return result;
@@ -379,24 +382,25 @@ async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
         throw error;
     }
     
-    // 비디오 파일 정보 저장 (확장 기능용)
-    log(`Response video_identifier: ${result.video_identifier}`);
-    if (result.video_identifier) {
-        lastGeneratedVideoFile = result.video_identifier;
-        log(`Saved video identifier: ${lastGeneratedVideoFile}`);
+    // 비디오 UUID 및 해상도 저장 (확장 기능용)
+    log(`Response video_uuid: ${result.video_uuid}`);
+    if (result.video_uuid) {
+        lastGeneratedVideoUUID = result.video_uuid;
+        lastVideoResolution = resolution;
+        log(`Saved video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
     } else {
-        log(`No video_identifier in response`);
+        log(`No video_uuid in response`);
     }
     
     return result;
 }
 
-async function executeVideoExtension(prompt, videoIdentifier, resolution, aspectRatio) {
+async function executeVideoExtension(prompt, videoUUID, resolution, aspectRatio) {
     log('비디오 확장 중... (시간이 다소 걸릴 수 있습니다)');
     
     const formData = new FormData();
     formData.append('prompt', prompt);
-    formData.append('video_identifier', videoIdentifier);
+    formData.append('video_uuid', videoUUID);
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
@@ -413,9 +417,12 @@ async function executeVideoExtension(prompt, videoIdentifier, resolution, aspect
         throw error;
     }
     
-    // 확장된 비디오 파일 정보 저장 (반복 확장 가능)
-    if (result.video_identifier) {
-        lastGeneratedVideoFile = result.video_identifier;
+    // 확장된 비디오 UUID 및 해상도 저장 (반복 확장 가능)
+    log(`Response extended video_uuid: ${result.video_uuid}`);
+    if (result.video_uuid) {
+        lastGeneratedVideoUUID = result.video_uuid;
+        // 확장 시 해상도는 동일하게 유지됨
+        log(`Saved extended video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
     }
     
     return result;
@@ -473,26 +480,41 @@ function displayResult(result, operation) {
         `;
         
         // 비디오 확장 기능 추가 (Text to Video, Image to Video인 경우)
-        // TODO: 비디오 확장 기능 - 나중에 구현
-        /*
         if (operation === 'text-to-video' || operation === 'image-to-video') {
-            content += `
-                <div class="card mt-3">
-                    <div class="card-header bg-info text-white">
-                        <h6 class="mb-0"><i class="bi bi-arrow-right-circle"></i> 비디오 확장</h6>
+            // 720p인 경우만 확장 가능
+            if (lastVideoResolution === '720p') {
+                content += `
+                    <div class="card mt-3">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="bi bi-arrow-right-circle"></i> 비디오 확장</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-2">추가 프롬프트를 입력하여 비디오를 확장할 수 있습니다. (최대 141초까지 반복 가능, 한 번에 약 7초씩 확장)</p>
+                            <textarea class="form-control mb-2" id="extendPrompt" rows="3" 
+                                placeholder="확장할 내용에 대한 프롬프트를 입력하세요..."></textarea>
+                            <button class="btn btn-info" id="extendVideoBtn">
+                                <i class="bi bi-plus-circle"></i> 비디오 확장 실행
+                            </button>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <p class="text-muted small mb-2">추가 프롬프트를 입력하여 비디오를 확장할 수 있습니다. (최대 141초까지 반복 가능)</p>
-                        <textarea class="form-control mb-2" id="extendPrompt" rows="3" 
-                            placeholder="확장할 내용에 대한 프롬프트를 입력하세요..."></textarea>
-                        <button class="btn btn-info" id="extendVideoBtn">
-                            <i class="bi bi-plus-circle"></i> 비디오 확장 실행
-                        </button>
+                `;
+            } else if (lastVideoResolution === '1080p') {
+                content += `
+                    <div class="card mt-3">
+                        <div class="card-header bg-warning text-dark">
+                            <h6 class="mb-0"><i class="bi bi-exclamation-triangle"></i> 비디오 확장 불가</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-0">
+                                <i class="bi bi-info-circle"></i> 비디오 확장은 <strong>720p 해상도</strong>로 생성된 비디오만 지원됩니다.<br>
+                                1080p로 생성된 비디오는 확장할 수 없습니다.<br>
+                                비디오를 확장하려면 <strong>720p 해상도</strong>로 다시 생성해주세요.
+                            </p>
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
+            }
         }
-        */
     } else if (fileType === 'audio') {
         content = `
             <audio controls class="w-100 mb-3">
@@ -508,16 +530,13 @@ function displayResult(result, operation) {
     
     resultContent.innerHTML = content;
     
-    // 비디오 확장 버튼 이벤트 리스너 추가
-    // TODO: 비디오 확장 기능 - 나중에 구현
-    /*
-    if (fileType === 'video' && (operation === 'text-to-video' || operation === 'image-to-video')) {
+    // 비디오 확장 버튼 이벤트 리스너 추가 (720p인 경우만)
+    if (fileType === 'video' && (operation === 'text-to-video' || operation === 'image-to-video') && lastVideoResolution === '720p') {
         const extendBtn = document.getElementById('extendVideoBtn');
         if (extendBtn) {
             extendBtn.addEventListener('click', handleVideoExtension);
         }
     }
-    */
 }
 
 // 비디오 확장 처리 함수
@@ -529,9 +548,9 @@ async function handleVideoExtension() {
         return;
     }
     
-    log(`Current lastGeneratedVideoFile: ${lastGeneratedVideoFile}`);
+    log(`Current lastGeneratedVideoUUID: ${lastGeneratedVideoUUID}`);
     
-    if (!lastGeneratedVideoFile) {
+    if (!lastGeneratedVideoUUID) {
         alert('확장할 비디오 정보가 없습니다.');
         return;
     }
@@ -547,7 +566,7 @@ async function handleVideoExtension() {
     try {
         const result = await executeVideoExtension(
             extendPrompt,
-            lastGeneratedVideoFile,
+            lastGeneratedVideoUUID,
             videoResolution.value,
             videoAspectRatio.value
         );

@@ -20,3 +20,8 @@ dev = [
 # 패키지 설치만 하고 빌드하지 않음
 package = false
 
+[tool.uv.workspace]
+members = [
+    "reference",
+]
+
