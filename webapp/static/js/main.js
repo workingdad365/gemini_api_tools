@@ -329,30 +329,41 @@ async function executeTextToVideo(prompt, resolution, aspectRatio) {
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
-    const response = await fetch('/api/text-to-video', {
-        method: 'POST',
-        body: formData
-    });
+    // AbortController로 타임아웃 설정 (10분)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10분
     
-    const result = await response.json();
-    
-    if (!response.ok) {
-        const error = new Error(result.detail || '작업 실패');
-        error.details = result.detail;
+    try {
+        const response = await fetch('/api/text-to-video', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        const result = await response.json();
+        
+        if (!response.ok) {
+            const error = new Error(result.detail || '작업 실패');
+            error.details = result.detail;
+            throw error;
+        }
+        
+        // 비디오 UUID 및 해상도 저장 (확장 기능용)
+        log(`Response video_uuid: ${result.video_uuid}`);
+        if (result.video_uuid) {
+            lastGeneratedVideoUUID = result.video_uuid;
+            lastVideoResolution = resolution;
+            log(`Saved video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
+        } else {
+            log(`No video_uuid in response`);
+        }
+        
+        return result;
+    } catch (error) {
+        clearTimeout(timeoutId);
         throw error;
     }
-    
-    // 비디오 UUID 및 해상도 저장 (확장 기능용)
-    log(`Response video_uuid: ${result.video_uuid}`);
-    if (result.video_uuid) {
-        lastGeneratedVideoUUID = result.video_uuid;
-        lastVideoResolution = resolution;
-        log(`Saved video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
-    } else {
-        log(`No video_uuid in response`);
-    }
-    
-    return result;
 }
 
 async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
@@ -369,30 +380,41 @@ async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
-    const response = await fetch('/api/image-to-video', {
-        method: 'POST',
-        body: formData
-    });
+    // AbortController로 타임아웃 설정 (10분)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10분
     
-    const result = await response.json();
-    
-    if (!response.ok) {
-        const error = new Error(result.detail || '작업 실패');
-        error.details = result.detail;
+    try {
+        const response = await fetch('/api/image-to-video', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        const result = await response.json();
+        
+        if (!response.ok) {
+            const error = new Error(result.detail || '작업 실패');
+            error.details = result.detail;
+            throw error;
+        }
+        
+        // 비디오 UUID 및 해상도 저장 (확장 기능용)
+        log(`Response video_uuid: ${result.video_uuid}`);
+        if (result.video_uuid) {
+            lastGeneratedVideoUUID = result.video_uuid;
+            lastVideoResolution = resolution;
+            log(`Saved video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
+        } else {
+            log(`No video_uuid in response`);
+        }
+        
+        return result;
+    } catch (error) {
+        clearTimeout(timeoutId);
         throw error;
     }
-    
-    // 비디오 UUID 및 해상도 저장 (확장 기능용)
-    log(`Response video_uuid: ${result.video_uuid}`);
-    if (result.video_uuid) {
-        lastGeneratedVideoUUID = result.video_uuid;
-        lastVideoResolution = resolution;
-        log(`Saved video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
-    } else {
-        log(`No video_uuid in response`);
-    }
-    
-    return result;
 }
 
 async function executeVideoExtension(prompt, videoUUID, resolution, aspectRatio) {
@@ -404,28 +426,39 @@ async function executeVideoExtension(prompt, videoUUID, resolution, aspectRatio)
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
-    const response = await fetch('/api/extend-video', {
-        method: 'POST',
-        body: formData
-    });
+    // AbortController로 타임아웃 설정 (10분)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10분
     
-    const result = await response.json();
-    
-    if (!response.ok) {
-        const error = new Error(result.detail || '작업 실패');
-        error.details = result.detail;
+    try {
+        const response = await fetch('/api/extend-video', {
+            method: 'POST',
+            body: formData,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        const result = await response.json();
+        
+        if (!response.ok) {
+            const error = new Error(result.detail || '작업 실패');
+            error.details = result.detail;
+            throw error;
+        }
+        
+        // 확장된 비디오 UUID 및 해상도 저장 (반복 확장 가능)
+        log(`Response extended video_uuid: ${result.video_uuid}`);
+        if (result.video_uuid) {
+            lastGeneratedVideoUUID = result.video_uuid;
+            // 확장 시 해상도는 동일하게 유지됨
+            log(`Saved extended video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
+        }
+        
+        return result;
+    } catch (error) {
+        clearTimeout(timeoutId);
         throw error;
     }
-    
-    // 확장된 비디오 UUID 및 해상도 저장 (반복 확장 가능)
-    log(`Response extended video_uuid: ${result.video_uuid}`);
-    if (result.video_uuid) {
-        lastGeneratedVideoUUID = result.video_uuid;
-        // 확장 시 해상도는 동일하게 유지됨
-        log(`Saved extended video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
-    }
-    
-    return result;
 }
 
 async function executeTextToSpeech(prompt, voiceName) {
