@@ -66,6 +66,32 @@
                         <h5 class="mb-0"><i class="bi bi-gear"></i> 설정</h5>
                     </div>
                     <div class="card-body">
+                        <!-- 이미지 생성 모델 선택 -->
+                        <div class="mb-3" id="imageModelGroup" style="display: none;">
+                            <label class="form-label fw-bold">이미지 생성 모델</label>
+                            <select class="form-select" id="imageModel">
+                                <option value="gemini-2.5-flash-image" selected>Nano-Banana</option>
+                                <option value="gemini-3-pro-image-preview">Nano-Banana Pro</option>
+                            </select>
+                            <div class="form-text text-muted small mt-1">
+                                <strong>Nano-Banana</strong>: 빠른 생성 속도 (최대 3장 이미지 참조)<br>
+                                <strong>Nano-Banana Pro</strong>: 고급 기능 및 높은 품질 (최대 14장 이미지 참조)
+                            </div>
+                        </div>
+                        
+                        <!-- 이미지 해상도 (Nano-Banana Pro 전용) -->
+                        <div class="mb-3" id="imageResolutionGroup" style="display: none;">
+                            <label class="form-label fw-bold">이미지 해상도</label>
+                            <select class="form-select" id="imageResolution">
+                                <option value="1K">1K</option>
+                                <option value="2K" selected>2K</option>
+                                <option value="4K">4K</option>
+                            </select>
+                            <div class="form-text text-muted small mt-1">
+                                해상도가 높을수록 더 선명한 이미지가 생성되지만 처리 시간이 길어집니다.
+                            </div>
+                        </div>
+                        
                         <!-- 이미지 비율 -->
                         <div class="mb-3" id="imageRatioGroup">
                             <label class="form-label fw-bold">이미지 비율</label>

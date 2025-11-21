@@ -7,6 +7,10 @@ const dropZone = document.getElementById('dropZone');
 const dropZoneText = document.getElementById('dropZoneText');
 const fileInputHint = document.getElementById('fileInputHint');
 const selectedFileName = document.getElementById('selectedFileName');
+const imageModelGroup = document.getElementById('imageModelGroup');
+const imageModel = document.getElementById('imageModel');
+const imageResolutionGroup = document.getElementById('imageResolutionGroup');
+const imageResolution = document.getElementById('imageResolution');
 const imageRatioGroup = document.getElementById('imageRatioGroup');
 const videoSettingsGroup = document.getElementById('videoSettingsGroup');
 const voiceSettingsGroup = document.getElementById('voiceSettingsGroup');
@@ -130,6 +134,38 @@ function addFiles(files) {
     log(`파일 추가됨: ${newFiles.length}개 (전체: ${selectedFiles.length}개)`);
 }
 
+// MAX_FILES 업데이트 함수
+function updateMaxFiles() {
+    const operation = operationType.value;
+    const selectedModel = imageModel.value;
+    
+    if (operation === 'image-to-image') {
+        if (selectedModel === 'gemini-3-pro-image-preview') {
+            MAX_FILES = 14;
+        } else {
+            MAX_FILES = 3;
+        }
+        fileInputCardTitle.innerHTML = `<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 ${MAX_FILES}장)`;
+        log(`최대 파일 수 변경: ${MAX_FILES}장`);
+    } else if (operation === 'image-to-video') {
+        MAX_FILES = 3;
+    }
+}
+
+// 모델에 따른 해상도 옵션 표시/숨김
+function updateResolutionVisibility() {
+    const operation = operationType.value;
+    const selectedModel = imageModel.value;
+    
+    // text-to-image 또는 image-to-image이고, Nano-Banana Pro 모델인 경우에만 해상도 표시
+    if ((operation === 'text-to-image' || operation === 'image-to-image') && 
+        selectedModel === 'gemini-3-pro-image-preview') {
+        imageResolutionGroup.style.display = 'block';
+    } else {
+        imageResolutionGroup.style.display = 'none';
+    }
+}
+
 // 작업 유형에 따른 UI 업데이트 함수
 function updateUIForOperation() {
     const operation = operationType.value;
@@ -147,23 +183,43 @@ function updateUIForOperation() {
     // 파일 입력 표시 여부
     if (operation === 'image-to-image' || operation === 'image-to-video') {
         fileInputCard.style.display = 'block';
-        fileInputCardTitle.innerHTML = '<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 3장)';
+        if (operation === 'image-to-image') {
+            updateMaxFiles();
+        } else {
+            MAX_FILES = 3;
+            fileInputCardTitle.innerHTML = '<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 3장)';
+        }
         dropZoneText.textContent = '여기에 파일을 드래그앤드롭하거나';
         fileInput.accept = 'image/*';
         fileInput.multiple = true;
-        MAX_FILES = 3;
     } else {
         fileInputCard.style.display = 'none';
     }
     
     // 설정 표시 여부
+    imageModelGroup.style.display = (operation === 'text-to-image' || operation === 'image-to-image') ? 'block' : 'none';
     imageRatioGroup.style.display = operation === 'text-to-image' ? 'block' : 'none';
     videoSettingsGroup.style.display = (operation === 'text-to-video' || operation === 'image-to-video') ? 'block' : 'none';
     voiceSettingsGroup.style.display = operation === 'text-to-speech' ? 'block' : 'none';
+    
+    // 해상도 옵션 표시 여부 업데이트
+    updateResolutionVisibility();
 }
 
 // 작업 유형 변경 시
 operationType.addEventListener('change', updateUIForOperation);
+
+// 이미지 모델 변경 시
+imageModel.addEventListener('change', () => {
+    updateMaxFiles();
+    updateResolutionVisibility();
+    // 파일이 이미 선택되어 있고 MAX_FILES를 초과하는 경우 처리
+    if (selectedFiles.length > MAX_FILES) {
+        selectedFiles = selectedFiles.slice(0, MAX_FILES);
+        updateImagePreview();
+        log(`파일 개수가 최대 제한을 초과하여 ${MAX_FILES}개로 조정되었습니다.`);
+    }
+});
 
 // 파일 선택
 fileInput.addEventListener('change', (e) => {
@@ -232,10 +288,10 @@ executeBtn.addEventListener('click', async () => {
         
         switch (operation) {
             case 'text-to-image':
-                result = await executeTextToImage(prompt, aspectRatio.value);
+                result = await executeTextToImage(prompt, aspectRatio.value, imageModel.value, imageResolution.value);
                 break;
             case 'image-to-image':
-                result = await executeImageToImage(prompt, selectedFiles);
+                result = await executeImageToImage(prompt, selectedFiles, imageModel.value, imageResolution.value);
                 break;
             case 'text-to-video':
                 result = await executeTextToVideo(prompt, videoResolution.value, videoAspectRatio.value);
@@ -275,10 +331,12 @@ executeBtn.addEventListener('click', async () => {
 });
 
 // API 호출 함수들
-async function executeTextToImage(prompt, aspectRatio) {
+async function executeTextToImage(prompt, aspectRatio, model, resolution) {
     const formData = new FormData();
     formData.append('prompt', prompt);
     formData.append('aspect_ratio', aspectRatio);
+    formData.append('model', model);
+    formData.append('resolution', resolution);
     
     const response = await fetch('/api/text-to-image', {
         method: 'POST',
@@ -296,9 +354,11 @@ async function executeTextToImage(prompt, aspectRatio) {
     return result;
 }
 
-async function executeImageToImage(prompt, files) {
+async function executeImageToImage(prompt, files, model, resolution) {
     const formData = new FormData();
     formData.append('prompt', prompt);
+    formData.append('model', model);
+    formData.append('resolution', resolution);
     
     // 멀티 파일 업로드
     files.forEach((file, index) => {

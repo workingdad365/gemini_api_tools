@@ -216,23 +216,35 @@ async def health_check():
 @app.post("/api/text-to-image")
 async def text_to_image(
     prompt: str = Form(...),
-    aspect_ratio: str = Form("16:9")
+    aspect_ratio: str = Form("16:9"),
+    model: str = Form("gemini-2.5-flash-image"),
+    resolution: str = Form("2K")
 ):
     """Text to Image 작업"""
     try:
-        logger.info(f"Text to Image request - prompt length: {len(prompt)}, aspect_ratio: {aspect_ratio}")
-        
-        model = "gemini-2.5-flash-image"
+        logger.info(f"Text to Image request - prompt length: {len(prompt)}, aspect_ratio: {aspect_ratio}, model: {model}, resolution: {resolution}")
         contents = [
             types.Content(
                 role="user",
                 parts=[types.Part.from_text(text=prompt)],
             ),
         ]
-        generate_content_config = types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-            image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
-        )
+        
+        # config 설정 (모델에 따라 분기)
+        if model == "gemini-3-pro-image-preview":
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
+                image_config=types.ImageConfig(
+                    aspect_ratio=aspect_ratio,
+                    image_size=resolution
+                ),
+            )
+        else:
+            # 기존 모델은 기존 방식 유지
+            generate_content_config = types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
+                image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
+            )
         
         logger.info("Calling Gemini API...")
         text_response = ""  # 텍스트 응답 누적
@@ -292,14 +304,17 @@ async def text_to_image(
 @app.post("/api/image-to-image")
 async def image_to_image(
     prompt: str = Form(...),
-    files: list[UploadFile] = File(...)
+    files: list[UploadFile] = File(...),
+    model: str = Form("gemini-2.5-flash-image"),
+    resolution: str = Form("2K")
 ):
     """Image to Image 작업 (멀티 이미지 지원)"""
     upload_paths = []
     try:
-        # 최대 3개까지만 처리
-        files_to_process = files[:3]
-        logger.info(f"Processing {len(files_to_process)} images for image-to-image")
+        # 모델에 따라 최대 파일 수 결정
+        max_files = 14 if model == "gemini-3-pro-image-preview" else 3
+        files_to_process = files[:max_files]
+        logger.info(f"Processing {len(files_to_process)} images for image-to-image with model {model}, resolution: {resolution}")
         
         # 파일 저장
         for file in files_to_process:
@@ -328,26 +343,32 @@ async def image_to_image(
             ),
         ]
         
-        # 1개 이미지인 경우 gemini-2.5-flash-image-preview 사용
-        if len(upload_paths) == 1:
-            img_to_edit = Image.open(upload_paths[0])
-            model = 'gemini-2.5-flash-image-preview'
-            contents = [img_to_edit, prompt]
-        else:
-            # 2개 이상 이미지인 경우 gemini-2.5-flash-image 사용
-            images = [Image.open(path) for path in upload_paths]
-            model = 'gemini-2.5-flash-image'
-            contents = images + [prompt]
+        # 이미지 로드
+        images = [Image.open(path) for path in upload_paths]
+        contents = images + [prompt]
         
         text_response = ""  # 텍스트 응답 누적
+        
+        # config 설정 (모델에 따라 분기)
+        if model == "gemini-3-pro-image-preview":
+            config = types.GenerateContentConfig(
+                safety_settings=safety_settings,
+                response_modalities=["IMAGE", "TEXT"],
+                image_config=types.ImageConfig(
+                    image_size=resolution
+                )
+            )
+        else:
+            # 기존 모델은 기존 방식 유지
+            config = types.GenerateContentConfig(
+                safety_settings=safety_settings
+            )
         
         # 스트리밍 방식으로 이미지 생성
         for chunk in genai_client.models.generate_content_stream(
             model=model,
             contents=contents,
-            config=types.GenerateContentConfig(
-                safety_settings=safety_settings
-            )
+            config=config
         ):
             if (
                 chunk.candidates is None
