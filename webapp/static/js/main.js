@@ -546,6 +546,18 @@ async function executeTextToSpeech(prompt, voiceName) {
 function displayResult(result, operation) {
     resultCard.classList.remove('d-none');
     
+    // 텍스트 전용 응답인 경우 (이미지 생성이 아닌 질문/번역 등)
+    if (result.text_only) {
+        resultContent.innerHTML = `
+            <div class="alert alert-info text-start">
+                <h6 class="alert-heading"><i class="bi bi-chat-dots"></i> 텍스트 응답</h6>
+                <hr>
+                <p class="mb-0" style="white-space: pre-wrap;">${result.llm_response}</p>
+            </div>
+        `;
+        return;
+    }
+    
     const fileType = operation.includes('video') ? 'video' : 
                      operation.includes('speech') ? 'audio' : 'image';
     

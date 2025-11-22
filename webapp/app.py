@@ -411,7 +411,22 @@ async def image_to_image(
                     
                     return JSONResponse(response_data)
         
-        logger.error("No image data received from API")
+        # 이미지 데이터가 없지만 텍스트 응답이 있는 경우 (질문, 번역 등)
+        if text_response:
+            logger.info("Text-only response received (no image generated)")
+            # 업로드된 파일 삭제
+            for upload_path in upload_paths:
+                if upload_path.exists():
+                    upload_path.unlink()
+            
+            return JSONResponse({
+                "status": "success",
+                "message": "텍스트 응답을 받았습니다.",
+                "llm_response": text_response,
+                "text_only": True  # 텍스트만 있음을 표시
+            })
+        
+        logger.error("No image data or text response received from API")
         raise HTTPException(status_code=500, detail="이미지 생성 실패: 응답에 이미지 데이터가 없습니다.")
     
     except Exception as e:
