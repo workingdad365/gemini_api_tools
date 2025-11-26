@@ -21,15 +21,23 @@
         </div>
     </nav>
 
-    <div class="container py-4">
+    <div class="container py-5">
         <div class="row">
             <div class="col-lg-8 mx-auto">
+                <!-- Header -->
+                <div class="text-center mb-5">
+                    <h1 class="display-5 fw-bold text-gradient mb-2">
+                        <i class="bi bi-stars text-primary"></i> Gemini API Tools
+                    </h1>
+                    <p class="lead text-muted">Create amazing content with Google's AI</p>
+                </div>
+
                 <!-- 작업 선택 -->
-                <div class="card mb-4 shadow-sm">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0"><i class="bi bi-list-task"></i> 작업 선택</h5>
+                <div class="card mb-4 shadow-sm border-0">
+                    <div class="card-header card-header-custom">
+                        <h5 class="mb-0"><i class="bi bi-list-task me-2"></i> 작업 선택</h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body p-4">
                         <select class="form-select form-select-lg" id="operationType">
                             <option value="text-to-image">Text to Image</option>
                             <option value="image-to-image">Image to Image</option>
@@ -41,16 +49,18 @@
                 </div>
 
                 <!-- 입력 파일 -->
-                <div class="card mb-4 shadow-sm" id="fileInputCard" style="display: none;">
-                    <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0" id="fileInputCardTitle"><i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 3장)</h5>
+                <div class="card mb-4 shadow-sm border-0" id="fileInputCard" style="display: none;">
+                    <div class="card-header card-header-custom">
+                        <h5 class="mb-0" id="fileInputCardTitle"><i class="bi bi-file-earmark-image me-2"></i> 입력 파일 (최대 3장)</h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body p-4">
                         <div class="drop-zone" id="dropZone">
-                            <i class="bi bi-cloud-arrow-up display-1 text-muted"></i>
-                            <p class="mt-3 mb-2" id="dropZoneText">여기에 파일을 드래그앤드롭하거나</p>
-                            <label for="fileInput" class="btn btn-primary">
-                                <i class="bi bi-folder2-open"></i> 파일 선택
+                            <div class="mb-3">
+                                <i class="bi bi-cloud-arrow-up display-4 text-primary opacity-50"></i>
+                            </div>
+                            <p class="mb-3 text-muted" id="dropZoneText">여기에 파일을 드래그앤드롭하거나</p>
+                            <label for="fileInput" class="btn btn-outline-primary px-4 rounded-pill">
+                                <i class="bi bi-folder2-open me-2"></i> 파일 선택
                             </label>
                             <input type="file" id="fileInput" class="d-none" accept="image/*" multiple>
                             <p class="mt-2 mb-0 text-muted small" id="fileInputHint"></p>
@@ -61,27 +71,28 @@
                 </div>
 
                 <!-- 설정 -->
-                <div class="card mb-4 shadow-sm">
-                    <div class="card-header bg-info text-white">
-                        <h5 class="mb-0"><i class="bi bi-gear"></i> 설정</h5>
+                <div class="card mb-4 shadow-sm border-0">
+                    <div class="card-header card-header-custom">
+                        <h5 class="mb-0"><i class="bi bi-gear me-2"></i> 설정</h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body p-4">
                         <!-- 이미지 생성 모델 선택 -->
-                        <div class="mb-3" id="imageModelGroup" style="display: none;">
-                            <label class="form-label fw-bold">이미지 생성 모델</label>
+                        <div class="mb-4" id="imageModelGroup" style="display: none;">
+                            <label class="form-label fw-bold text-dark">이미지 생성 모델</label>
                             <select class="form-select" id="imageModel">
                                 <option value="gemini-3-pro-image-preview" selected>Nano-Banana Pro</option>
                                 <option value="gemini-2.5-flash-image">Nano-Banana</option>                                
                             </select>
-                            <div class="form-text text-muted small mt-1">
+                            <div class="form-text text-muted small mt-2">
+                                <i class="bi bi-info-circle me-1"></i>
                                 <strong>Nano-Banana Pro</strong>: 고급 기능 및 높은 품질 (최대 14장 이미지 참조)<br>
-                                <strong>Nano-Banana</strong>: 빠른 생성 속도 (최대 3장 이미지 참조)                                
+                                <span class="ms-3"></span><strong>Nano-Banana</strong>: 빠른 생성 속도 (최대 3장 이미지 참조)                                
                             </div>
                         </div>
                         
                         <!-- 이미지 해상도 (Nano-Banana Pro 전용) -->
-                        <div class="mb-3" id="imageResolutionGroup" style="display: none;">
-                            <label class="form-label fw-bold">이미지 해상도</label>
+                        <div class="mb-4" id="imageResolutionGroup" style="display: none;">
+                            <label class="form-label fw-bold text-dark">이미지 해상도</label>
                             <select class="form-select" id="imageResolution">
                                 <option value="1K">1K</option>
                                 <option value="2K" selected>2K</option>
@@ -93,8 +104,8 @@
                         </div>
                         
                         <!-- 이미지 비율 -->
-                        <div class="mb-3" id="imageRatioGroup">
-                            <label class="form-label fw-bold">이미지 비율</label>
+                        <div class="mb-4" id="imageRatioGroup">
+                            <label class="form-label fw-bold text-dark">이미지 비율</label>
                             <select class="form-select" id="aspectRatio">
                                 <option value="1:1">1:1</option>
                                 <option value="2:3">2:3</option>
@@ -110,15 +121,15 @@
                         <!-- 비디오 설정 -->
                         <div id="videoSettingsGroup" style="display: none;">
                             <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label fw-bold">비디오 해상도</label>
+                                <div class="col-md-6 mb-4">
+                                    <label class="form-label fw-bold text-dark">비디오 해상도</label>
                                     <select class="form-select" id="videoResolution">
                                         <option value="720p" selected>720p</option>
                                         <option value="1080p">1080p</option>
                                     </select>
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label fw-bold">비디오 비율</label>
+                                <div class="col-md-6 mb-4">
+                                    <label class="form-label fw-bold text-dark">비디오 비율</label>
                                     <select class="form-select" id="videoAspectRatio">
                                         <option value="16:9" selected>16:9 (가로)</option>
                                         <option value="9:16">9:16 (세로)</option>
@@ -128,8 +139,8 @@
                         </div>
 
                         <!-- 음성 설정 -->
-                        <div class="mb-3" id="voiceSettingsGroup" style="display: none;">
-                            <label class="form-label fw-bold">음성 선택</label>
+                        <div class="mb-4" id="voiceSettingsGroup" style="display: none;">
+                            <label class="form-label fw-bold text-dark">음성 선택</label>
                             <select class="form-select" id="voiceName">
                                 <option value="Zephyr" selected>Zephyr -- Bright</option>
                                 <option value="Puck">Puck -- Upbeat</option>
@@ -167,56 +178,56 @@
                 </div>
 
                 <!-- 프롬프트 입력 -->
-                <div class="card mb-4 shadow-sm">
-                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-chat-left-text"></i> 프롬프트 입력</h5>
+                <div class="card mb-5 shadow-sm border-0">
+                    <div class="card-header card-header-custom d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-chat-left-text me-2"></i> 프롬프트 입력</h5>
                         <div>
-                            <button class="btn btn-sm btn-light me-1" id="savePromptBtn">
+                            <button class="btn btn-sm btn-outline-secondary me-1" id="savePromptBtn">
                                 <i class="bi bi-save"></i> 저장
                             </button>
-                            <button class="btn btn-sm btn-light" id="loadPromptBtn">
+                            <button class="btn btn-sm btn-outline-secondary" id="loadPromptBtn">
                                 <i class="bi bi-list-ul"></i> 목록
                             </button>
                         </div>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body p-4">
                         <textarea class="form-control" id="promptText" rows="6" 
                             placeholder="프롬프트를 입력하세요... (프롬프트는 한국어로 작성해도 됩니다)"></textarea>
                     </div>
                 </div>
 
                 <!-- 실행 버튼 -->
-                <div class="d-grid mb-4">
-                    <button class="btn btn-primary btn-lg" id="executeBtn">
-                        <i class="bi bi-play-circle"></i> 실행
+                <div class="text-center mb-5">
+                    <button class="btn btn-primary btn-lg rounded-pill px-5 py-3 shadow-lg" id="executeBtn">
+                        <i class="bi bi-play-circle-fill me-2"></i> <span class="fw-bold">실행하기</span>
                     </button>
                 </div>
 
                 <!-- 진행 상태 -->
-                <div class="alert alert-info d-none" id="progressAlert" role="alert">
-                    <div class="d-flex align-items-center">
-                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                <div class="alert alert-info d-none border-0 shadow-sm" id="progressAlert" role="alert">
+                    <div class="d-flex align-items-center justify-content-center">
+                        <div class="spinner-border spinner-border-sm me-3" role="status">
                             <span class="visually-hidden">처리 중...</span>
                         </div>
-                        <span id="progressMessage">처리 중...</span>
+                        <span id="progressMessage" class="fw-medium">처리 중...</span>
                     </div>
                 </div>
 
                 <!-- 결과 -->
-                <div class="card shadow-sm d-none" id="resultCard">
-                    <div class="card-header bg-dark text-white">
-                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> 결과</h5>
+                <div class="card shadow-sm border-0 d-none mb-4" id="resultCard">
+                    <div class="card-header card-header-custom">
+                        <h5 class="mb-0"><i class="bi bi-check-circle me-2"></i> 결과</h5>
                     </div>
-                    <div class="card-body text-center" id="resultContent">
+                    <div class="card-body text-center p-4" id="resultContent">
                     </div>
                 </div>
 
                 <!-- 로그 -->
-                <div class="card mt-4 shadow-sm">
-                    <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0"><i class="bi bi-terminal"></i> 로그</h5>
+                <div class="card shadow-sm border-0">
+                    <div class="card-header card-header-custom">
+                        <h5 class="mb-0"><i class="bi bi-terminal me-2"></i> 로그</h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body p-0">
                         <div class="log-container" id="logContainer">
                             <div class="text-muted">준비 완료</div>
                         </div>
