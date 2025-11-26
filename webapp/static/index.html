@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Google Gemini API Tools</title>
-    
+
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -12,6 +13,7 @@
     <!-- Custom CSS -->
     <link href="/static/css/style.css" rel="stylesheet">
 </head>
+
 <body>
     <nav class="navbar navbar-dark bg-dark shadow-sm">
         <div class="container-fluid">
@@ -51,7 +53,8 @@
                 <!-- 입력 파일 -->
                 <div class="card mb-4 shadow-sm border-0" id="fileInputCard" style="display: none;">
                     <div class="card-header card-header-custom">
-                        <h5 class="mb-0" id="fileInputCardTitle"><i class="bi bi-file-earmark-image me-2"></i> 입력 파일 (최대 3장)</h5>
+                        <h5 class="mb-0" id="fileInputCardTitle"><i class="bi bi-file-earmark-image me-2"></i> 입력 파일 (최대
+                            3장)</h5>
                     </div>
                     <div class="card-body p-4">
                         <div class="drop-zone" id="dropZone">
@@ -81,15 +84,15 @@
                             <label class="form-label fw-bold text-dark">이미지 생성 모델</label>
                             <select class="form-select" id="imageModel">
                                 <option value="gemini-3-pro-image-preview" selected>Nano-Banana Pro</option>
-                                <option value="gemini-2.5-flash-image">Nano-Banana</option>                                
+                                <option value="gemini-2.5-flash-image">Nano-Banana</option>
                             </select>
                             <div class="form-text text-muted small mt-2">
                                 <i class="bi bi-info-circle me-1"></i>
                                 <strong>Nano-Banana Pro</strong>: 고급 기능 및 높은 품질 (최대 14장 이미지 참조)<br>
-                                <span class="ms-3"></span><strong>Nano-Banana</strong>: 빠른 생성 속도 (최대 3장 이미지 참조)                                
+                                <span class="ms-3"></span><strong>Nano-Banana</strong>: 빠른 생성 속도 (최대 3장 이미지 참조)
                             </div>
                         </div>
-                        
+
                         <!-- 이미지 해상도 (Nano-Banana Pro 전용) -->
                         <div class="mb-4" id="imageResolutionGroup" style="display: none;">
                             <label class="form-label fw-bold text-dark">이미지 해상도</label>
@@ -102,7 +105,7 @@
                                 해상도가 높을수록 더 선명한 이미지가 생성되지만 처리 시간이 길어집니다.
                             </div>
                         </div>
-                        
+
                         <!-- 이미지 비율 -->
                         <div class="mb-4" id="imageRatioGroup">
                             <label class="form-label fw-bold text-dark">이미지 비율</label>
@@ -180,7 +183,7 @@
                 <!-- 프롬프트 입력 -->
                 <div class="card mb-5 shadow-sm border-0">
                     <div class="card-header card-header-custom d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-chat-left-text me-2"></i> 프롬프트 입력</h5>
+                        <h5 class="mb-0 text-nowrap"><i class="bi bi-chat-left-text me-2"></i> 프롬프트 입력</h5>
                         <div>
                             <button class="btn btn-sm btn-outline-secondary me-1" id="savePromptBtn">
                                 <i class="bi bi-save"></i> 저장
@@ -191,7 +194,7 @@
                         </div>
                     </div>
                     <div class="card-body p-4">
-                        <textarea class="form-control" id="promptText" rows="6" 
+                        <textarea class="form-control" id="promptText" rows="6"
                             placeholder="프롬프트를 입력하세요... (프롬프트는 한국어로 작성해도 됩니다)"></textarea>
                     </div>
                 </div>
@@ -259,5 +262,5 @@
     <!-- Custom JS -->
     <script src="/static/js/main.js"></script>
 </body>
-</html>
 
+</html>

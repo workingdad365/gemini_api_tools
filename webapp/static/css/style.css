@@ -3,17 +3,26 @@
 
 /* Variables */
 :root {
-    --primary-color: #4f46e5; /* Indigo 600 */
-    --primary-hover: #4338ca; /* Indigo 700 */
-    --secondary-color: #64748b; /* Slate 500 */
-    --bg-color: #f8fafc; /* Slate 50 */
+    --primary-color: #4f46e5;
+    /* Indigo 600 */
+    --primary-hover: #4338ca;
+    /* Indigo 700 */
+    --secondary-color: #64748b;
+    /* Slate 500 */
+    --bg-color: #f8fafc;
+    /* Slate 50 */
     --card-bg: #ffffff;
-    --text-main: #0f172a; /* Slate 900 */
-    --text-muted: #64748b; /* Slate 500 */
-    --border-color: #e2e8f0; /* Slate 200 */
-    --success-color: #10b981; /* Emerald 500 */
+    --text-main: #0f172a;
+    /* Slate 900 */
+    --text-muted: #64748b;
+    /* Slate 500 */
+    --border-color: #e2e8f0;
+    /* Slate 200 */
+    --success-color: #10b981;
+    /* Emerald 500 */
     --header-bg: #ffffff;
-    --header-text: #1e293b; /* Slate 800 */
+    --header-text: #1e293b;
+    /* Slate 800 */
 }
 
 /* Global Styles */
@@ -26,7 +35,12 @@ body {
 }
 
 /* Typography */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
     font-weight: 600;
     letter-spacing: -0.025em;
 }
@@ -83,14 +97,16 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: 12px;
     padding: 3rem 2rem;
     text-align: center;
-    background-color: #f1f5f9; /* Slate 100 */
+    background-color: #f1f5f9;
+    /* Slate 100 */
     transition: all 0.3s ease;
     cursor: pointer;
 }
 
 .drop-zone:hover {
     border-color: var(--primary-color);
-    background-color: #e0e7ff; /* Indigo 50 */
+    background-color: #e0e7ff;
+    /* Indigo 50 */
 }
 
 .drop-zone.drag-over {
@@ -106,7 +122,8 @@ h1, h2, h3, h4, h5, h6 {
     color: var(--text-main);
 }
 
-.form-select, .form-control {
+.form-select,
+.form-control {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 0.75rem 1rem;
@@ -116,7 +133,8 @@ h1, h2, h3, h4, h5, h6 {
     transition: all 0.2s;
 }
 
-.form-select:focus, .form-control:focus {
+.form-select:focus,
+.form-control:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
     outline: none;
@@ -174,12 +192,15 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Log Container */
 .log-container {
-    background-color: #1e293b; /* Slate 800 */
-    color: #cbd5e1; /* Slate 300 */
+    background-color: #1e293b;
+    /* Slate 800 */
+    color: #cbd5e1;
+    /* Slate 300 */
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-size: 0.85rem;
     padding: 1.5rem;
-    border-radius: 0 0 16px 16px; /* Rounded bottom only if inside card */
+    border-radius: 0 0 16px 16px;
+    /* Rounded bottom only if inside card */
     max-height: 350px;
     overflow-y: auto;
     border-top: 1px solid #334155;
@@ -192,7 +213,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .log-entry.llm-response {
-    color: #38bdf8; /* Sky 400 */
+    color: #38bdf8;
+    /* Sky 400 */
     border-left-color: #38bdf8;
 }
 
@@ -268,8 +290,10 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Progress Alert */
 #progressAlert {
-    background-color: #eff6ff; /* Blue 50 */
-    color: #1e40af; /* Blue 800 */
+    background-color: #eff6ff;
+    /* Blue 50 */
+    color: #1e40af;
+    /* Blue 800 */
     border: 1px solid #dbeafe;
     border-radius: 12px;
 }
@@ -283,18 +307,36 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Animations */
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .card {
     animation: fadeIn 0.5s ease-out forwards;
 }
 
-.card:nth-child(1) { animation-delay: 0.1s; }
-.card:nth-child(2) { animation-delay: 0.2s; }
-.card:nth-child(3) { animation-delay: 0.3s; }
-.card:nth-child(4) { animation-delay: 0.4s; }
+.card:nth-child(1) {
+    animation-delay: 0.1s;
+}
+
+.card:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.card:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+.card:nth-child(4) {
+    animation-delay: 0.4s;
+}
 
 /* Responsive */
 @media (max-width: 768px) {
@@ -302,8 +344,19 @@ h1, h2, h3, h4, h5, h6 {
         padding-left: 1rem;
         padding-right: 1rem;
     }
-    
+
     .card-body {
         padding: 1.25rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .card-header-custom h5 {
+        font-size: 1rem;
+    }
+
+    .card-header-custom .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
     }
 }
