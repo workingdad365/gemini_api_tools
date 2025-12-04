@@ -293,8 +293,18 @@ async def text_to_image(
                     
                     return JSONResponse(response_data)
         
-        logger.error("No image data received from API")
-        raise HTTPException(status_code=500, detail="이미지 생성 실패")
+        # 이미지가 없지만 텍스트 응답이 있는 경우 (콘티, 설명 등)
+        if text_response:
+            logger.info("No image generated, but text response received")
+            return JSONResponse({
+                "status": "success",
+                "message": "텍스트 응답을 받았습니다.",
+                "text_only": True,
+                "llm_response": text_response
+            })
+        
+        logger.error("No image or text data received from API")
+        raise HTTPException(status_code=500, detail="응답 데이터 없음")
     
     except Exception as e:
         logger.error(f"Text to Image error: {str(e)}")
