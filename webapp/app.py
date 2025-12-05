@@ -104,6 +104,26 @@ logger.info("Gemini client initialized successfully")
 # UUID -> generated_video 객체 매핑
 video_objects_cache = {}
 
+# 공통 안전 필터 설정 (OFF)
+SAFETY_SETTINGS = [
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold=types.HarmBlockThreshold.OFF,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold=types.HarmBlockThreshold.OFF,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold=types.HarmBlockThreshold.OFF,
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold=types.HarmBlockThreshold.OFF,
+    ),
+]
+
 # 정적 파일 제공
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
@@ -233,6 +253,7 @@ async def text_to_image(
         # config 설정 (모델에 따라 분기)
         if model == "gemini-3-pro-image-preview":
             generate_content_config = types.GenerateContentConfig(
+                safety_settings=SAFETY_SETTINGS,
                 response_modalities=["IMAGE", "TEXT"],
                 image_config=types.ImageConfig(
                     aspect_ratio=aspect_ratio,
@@ -242,6 +263,7 @@ async def text_to_image(
         else:
             # 기존 모델은 기존 방식 유지
             generate_content_config = types.GenerateContentConfig(
+                safety_settings=SAFETY_SETTINGS,
                 response_modalities=["IMAGE", "TEXT"],
                 image_config=types.ImageConfig(aspect_ratio=aspect_ratio),
             )
@@ -333,26 +355,6 @@ async def image_to_image(
                 buffer.write(await file.read())
             upload_paths.append(upload_path)
         
-        # 안전 필터 설정 (OFF)
-        safety_settings = [
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-            types.SafetySetting(
-                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                threshold=types.HarmBlockThreshold.OFF,
-            ),
-        ]
-        
         # 이미지 로드
         images = [Image.open(path) for path in upload_paths]
         contents = images + [prompt]
@@ -362,7 +364,7 @@ async def image_to_image(
         # config 설정 (모델에 따라 분기)
         if model == "gemini-3-pro-image-preview":
             config = types.GenerateContentConfig(
-                safety_settings=safety_settings,
+                safety_settings=SAFETY_SETTINGS,
                 response_modalities=["IMAGE", "TEXT"],
                 image_config=types.ImageConfig(
                     image_size=resolution
@@ -371,7 +373,7 @@ async def image_to_image(
         else:
             # 기존 모델은 기존 방식 유지
             config = types.GenerateContentConfig(
-                safety_settings=safety_settings
+                safety_settings=SAFETY_SETTINGS
             )
         
         # 스트리밍 방식으로 이미지 생성
@@ -459,6 +461,7 @@ async def text_to_video(
             model=model,
             prompt=prompt,
             config=types.GenerateVideosConfig(
+                safety_settings=SAFETY_SETTINGS,
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
             )
@@ -573,6 +576,7 @@ async def image_to_video(
                 prompt=prompt,
                 image=safe_image,
                 config=types.GenerateVideosConfig(
+                    safety_settings=SAFETY_SETTINGS,
                     resolution=resolution,
                     aspect_ratio=aspect_ratio
                 )
@@ -605,6 +609,7 @@ async def image_to_video(
                 model=model,
                 prompt=prompt,
                 config=types.GenerateVideosConfig(
+                    safety_settings=SAFETY_SETTINGS,
                     reference_images=reference_images,
                     resolution=resolution,
                     aspect_ratio=aspect_ratio
@@ -704,6 +709,7 @@ async def extend_video(
             prompt=prompt,
             video=previous_video.video,
             config=types.GenerateVideosConfig(
+                safety_settings=SAFETY_SETTINGS,
                 number_of_videos=1,
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
