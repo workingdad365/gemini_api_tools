@@ -461,7 +461,6 @@ async def text_to_video(
             model=model,
             prompt=prompt,
             config=types.GenerateVideosConfig(
-                safety_settings=SAFETY_SETTINGS,
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
             )
@@ -576,7 +575,6 @@ async def image_to_video(
                 prompt=prompt,
                 image=safe_image,
                 config=types.GenerateVideosConfig(
-                    safety_settings=SAFETY_SETTINGS,
                     resolution=resolution,
                     aspect_ratio=aspect_ratio
                 )
@@ -609,7 +607,6 @@ async def image_to_video(
                 model=model,
                 prompt=prompt,
                 config=types.GenerateVideosConfig(
-                    safety_settings=SAFETY_SETTINGS,
                     reference_images=reference_images,
                     resolution=resolution,
                     aspect_ratio=aspect_ratio
@@ -709,7 +706,6 @@ async def extend_video(
             prompt=prompt,
             video=previous_video.video,
             config=types.GenerateVideosConfig(
-                safety_settings=SAFETY_SETTINGS,
                 number_of_videos=1,
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
