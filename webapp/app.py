@@ -12,8 +12,12 @@ from io import BytesIO
 from typing import Optional
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+import secrets
+import hashlib
+from collections import defaultdict
+
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, Response, Cookie, Depends
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -103,6 +107,22 @@ logger.info("Gemini client initialized successfully")
 # 비디오 객체 저장소 (메모리)
 # UUID -> generated_video 객체 매핑
 video_objects_cache = {}
+
+# 로그인 설정
+LOGIN_ID = os.getenv("LOGIN_ID", "admin")
+LOGIN_PASSWORD = os.getenv("LOGIN_PASSWORD", "admin")
+
+# 세션 저장소 (메모리)
+# session_token -> {"ip": str, "created_at": float}
+active_sessions = {}
+
+# IP 블록 관리 (메모리)
+# ip -> [timestamp1, timestamp2, ...] (실패한 시간 기록)
+failed_login_attempts = defaultdict(list)
+blocked_ips = {}  # ip -> block_until_timestamp
+BLOCK_DURATION = 300  # 5분 블록
+MAX_FAILED_ATTEMPTS = 3  # 1분 내 3번 실패 시 블록
+ATTEMPT_WINDOW = 60  # 1분
 
 # 공통 안전 필터 설정 (OFF)
 SAFETY_SETTINGS = [
@@ -216,9 +236,275 @@ def parse_audio_mime_type(mime_type: str) -> dict:
     
     return {"bits_per_sample": bits_per_sample, "rate": rate}
 
+def get_client_ip(request: Request) -> str:
+    """클라이언트 IP 주소 추출"""
+    # X-Forwarded-For 헤더 확인 (프록시 뒤에 있는 경우)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    # X-Real-IP 헤더 확인
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip
+    # 직접 연결인 경우
+    return request.client.host if request.client else "unknown"
+
+def is_ip_blocked(ip: str) -> bool:
+    """IP가 블록되어 있는지 확인"""
+    if ip in blocked_ips:
+        if time.time() < blocked_ips[ip]:
+            return True
+        else:
+            # 블록 시간 지남 -> 해제
+            del blocked_ips[ip]
+    return False
+
+def record_failed_attempt(ip: str) -> bool:
+    """실패한 로그인 시도 기록. 블록해야 하면 True 반환"""
+    current_time = time.time()
+    # 1분 이내의 시도만 유지
+    failed_login_attempts[ip] = [
+        t for t in failed_login_attempts[ip] 
+        if current_time - t < ATTEMPT_WINDOW
+    ]
+    failed_login_attempts[ip].append(current_time)
+    
+    if len(failed_login_attempts[ip]) >= MAX_FAILED_ATTEMPTS:
+        # IP 블록
+        blocked_ips[ip] = current_time + BLOCK_DURATION
+        failed_login_attempts[ip] = []
+        logger.warning(f"IP blocked due to too many failed attempts: {ip}")
+        return True
+    return False
+
+def verify_session(session_token: str = Cookie(None)) -> bool:
+    """세션 토큰 검증"""
+    if not session_token:
+        return False
+    return session_token in active_sessions
+
+async def require_auth(request: Request, session_token: str = Cookie(None)):
+    """인증 필요한 엔드포인트용 의존성"""
+    if not verify_session(session_token):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return True
+
 # API 엔드포인트
+@app.get("/login")
+async def login_page(request: Request, session_token: str = Cookie(None)):
+    """로그인 페이지"""
+    # 이미 로그인되어 있으면 메인 페이지로 리다이렉트
+    if verify_session(session_token):
+        return RedirectResponse(url="/", status_code=302)
+    
+    client_ip = get_client_ip(request)
+    blocked = is_ip_blocked(client_ip)
+    
+    login_html = f'''
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Login - Google Gemini API Tools</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+        <style>
+            body {{
+                background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }}
+            .login-card {{
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 16px;
+                padding: 2.5rem;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                max-width: 400px;
+                width: 100%;
+            }}
+            .login-title {{
+                color: #1a1a2e;
+                font-weight: 700;
+                margin-bottom: 1.5rem;
+            }}
+            .form-control:focus {{
+                border-color: #4361ee;
+                box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.25);
+            }}
+            .btn-login {{
+                background: linear-gradient(135deg, #4361ee, #3a0ca3);
+                border: none;
+                padding: 0.75rem;
+                font-weight: 600;
+            }}
+            .btn-login:hover {{
+                background: linear-gradient(135deg, #3a0ca3, #4361ee);
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="login-card">
+            <h3 class="login-title text-center">
+                <i class="bi bi-stars text-primary"></i> Gemini API Tools
+            </h3>
+            {"<div class='alert alert-danger'>IP가 일시적으로 차단되었습니다. 잠시 후 다시 시도하세요.</div>" if blocked else ""}
+            <form method="post" action="/login" {"style='display:none;'" if blocked else ""}>
+                <div class="mb-3">
+                    <label class="form-label">ID</label>
+                    <input type="text" class="form-control" name="login_id" required autofocus>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-control" name="login_password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-login w-100">
+                    <i class="bi bi-box-arrow-in-right"></i> 로그인
+                </button>
+            </form>
+        </div>
+    </body>
+    </html>
+    '''
+    return HTMLResponse(content=login_html)
+
+@app.post("/login")
+async def login_submit(
+    request: Request,
+    response: Response,
+    login_id: str = Form(...),
+    login_password: str = Form(...)
+):
+    """로그인 처리"""
+    client_ip = get_client_ip(request)
+    
+    # IP 블록 확인
+    if is_ip_blocked(client_ip):
+        logger.warning(f"Blocked IP attempted login: {client_ip}")
+        return RedirectResponse(url="/login?error=blocked", status_code=302)
+    
+    # 인증 확인
+    if login_id == LOGIN_ID and login_password == LOGIN_PASSWORD:
+        # 로그인 성공
+        session_token = secrets.token_urlsafe(32)
+        active_sessions[session_token] = {
+            "ip": client_ip,
+            "created_at": time.time()
+        }
+        logger.info(f"Login successful from IP: {client_ip}")
+        
+        # 실패 기록 초기화
+        if client_ip in failed_login_attempts:
+            del failed_login_attempts[client_ip]
+        
+        redirect_response = RedirectResponse(url="/", status_code=302)
+        redirect_response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            max_age=86400,  # 24시간
+            samesite="lax"
+        )
+        return redirect_response
+    else:
+        # 로그인 실패
+        logger.warning(f"Login failed from IP: {client_ip}")
+        is_blocked = record_failed_attempt(client_ip)
+        
+        if is_blocked:
+            return RedirectResponse(url="/login?error=blocked", status_code=302)
+        else:
+            # 실패 메시지와 함께 로그인 페이지 반환
+            remaining = MAX_FAILED_ATTEMPTS - len(failed_login_attempts.get(client_ip, []))
+            error_html = f'''
+            <!DOCTYPE html>
+            <html lang="ko">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Login - Google Gemini API Tools</title>
+                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+                <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+                <style>
+                    body {{
+                        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+                        min-height: 100vh;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }}
+                    .login-card {{
+                        background: rgba(255, 255, 255, 0.95);
+                        border-radius: 16px;
+                        padding: 2.5rem;
+                        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                        max-width: 400px;
+                        width: 100%;
+                    }}
+                    .login-title {{
+                        color: #1a1a2e;
+                        font-weight: 700;
+                        margin-bottom: 1.5rem;
+                    }}
+                    .form-control:focus {{
+                        border-color: #4361ee;
+                        box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.25);
+                    }}
+                    .btn-login {{
+                        background: linear-gradient(135deg, #4361ee, #3a0ca3);
+                        border: none;
+                        padding: 0.75rem;
+                        font-weight: 600;
+                    }}
+                    .btn-login:hover {{
+                        background: linear-gradient(135deg, #3a0ca3, #4361ee);
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="login-card">
+                    <h3 class="login-title text-center">
+                        <i class="bi bi-stars text-primary"></i> Gemini API Tools
+                    </h3>
+                    <div class="alert alert-warning">
+                        ID 또는 비밀번호가 올바르지 않습니다. (남은 시도: {remaining}회)
+                    </div>
+                    <form method="post" action="/login">
+                        <div class="mb-3">
+                            <label class="form-label">ID</label>
+                            <input type="text" class="form-control" name="login_id" required autofocus>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Password</label>
+                            <input type="password" class="form-control" name="login_password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-login w-100">
+                            <i class="bi bi-box-arrow-in-right"></i> 로그인
+                        </button>
+                    </form>
+                </div>
+            </body>
+            </html>
+            '''
+            return HTMLResponse(content=error_html)
+
+@app.get("/logout")
+async def logout(response: Response, session_token: str = Cookie(None)):
+    """로그아웃"""
+    if session_token and session_token in active_sessions:
+        del active_sessions[session_token]
+    
+    redirect_response = RedirectResponse(url="/login", status_code=302)
+    redirect_response.delete_cookie(key="session_token")
+    return redirect_response
+
 @app.get("/")
-async def read_root():
+async def read_root(request: Request, session_token: str = Cookie(None)):
+    """메인 페이지 (인증 필요)"""
+    if not verify_session(session_token):
+        return RedirectResponse(url="/login", status_code=302)
     return FileResponse(str(STATIC_DIR / "index.html"))
 
 @app.get("/health")
