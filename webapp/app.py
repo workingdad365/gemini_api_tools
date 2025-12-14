@@ -79,30 +79,34 @@ DB_PATH = BASE_DIR / "data.db"  # 웹앱 전용 데이터베이스
 UPLOADS_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
 
-# API 클라이언트 초기화
-# GEMINI_API_KEY_LIST에서 랜덤하게 하나 선택
+# API 키 리스트 초기화
+# GEMINI_API_KEY_LIST에서 키 목록 로드
 api_key_list_str = os.getenv("GEMINI_API_KEY_LIST")
 if api_key_list_str:
     # 공백으로 분리하여 리스트로 변환
     api_key_list = api_key_list_str.split()
-    if api_key_list:
-        # 랜덤하게 하나 선택
-        api_key = random.choice(api_key_list)
-        logger.info(f"Selected random API key from list (total: {len(api_key_list)} keys)")
-    else:
+    if not api_key_list:
         logger.error("GEMINI_API_KEY_LIST is empty")
         raise ValueError("GEMINI_API_KEY_LIST is empty")
+    logger.info(f"Loaded {len(api_key_list)} API keys from GEMINI_API_KEY_LIST")
 else:
     # fallback: GEMINI_API_KEY 사용
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    single_api_key = os.getenv("GEMINI_API_KEY")
+    if not single_api_key:
         logger.error("GEMINI_API_KEY or GEMINI_API_KEY_LIST not found in environment variables")
         raise ValueError("GEMINI_API_KEY or GEMINI_API_KEY_LIST not found in environment variables")
+    api_key_list = [single_api_key]
     logger.info("Using single GEMINI_API_KEY")
 
-logger.info("API key loaded successfully")
-genai_client = genai.Client(api_key=api_key)
-logger.info("Gemini client initialized successfully")
+logger.info("API keys loaded successfully")
+
+def get_genai_client() -> genai.Client:
+    """매 요청마다 랜덤 API 키를 선택하여 새 클라이언트 생성"""
+    selected_key = random.choice(api_key_list)
+    # 키의 앞 8자만 표시 (보안)
+    masked_key = selected_key[:8] + "..." if len(selected_key) > 8 else selected_key
+    logger.info(f"Selected API key: {masked_key} (from {len(api_key_list)} keys)")
+    return genai.Client(api_key=selected_key)
 
 # 비디오 객체 저장소 (메모리)
 # UUID -> generated_video 객체 매핑
@@ -556,8 +560,9 @@ async def text_to_image(
         
         logger.info("Calling Gemini API...")
         text_response = ""  # 텍스트 응답 누적
+        client = get_genai_client()
         
-        for chunk in genai_client.models.generate_content_stream(
+        for chunk in client.models.generate_content_stream(
             model=model,
             contents=contents,
             config=generate_content_config,
@@ -663,7 +668,8 @@ async def image_to_image(
             )
         
         # 스트리밍 방식으로 이미지 생성
-        for chunk in genai_client.models.generate_content_stream(
+        client = get_genai_client()
+        for chunk in client.models.generate_content_stream(
             model=model,
             contents=contents,
             config=config
@@ -743,7 +749,8 @@ async def text_to_video(
     """Text to Video 작업"""
     try:
         model = "veo-3.1-generate-preview"
-        operation = genai_client.models.generate_videos(
+        client = get_genai_client()
+        operation = client.models.generate_videos(
             model=model,
             prompt=prompt,
             config=types.GenerateVideosConfig(
@@ -755,7 +762,7 @@ async def text_to_video(
         # 작업 완료 대기
         while not operation.done:
             time.sleep(10)
-            operation = genai_client.operations.get(operation)
+            operation = client.operations.get(operation)
         
         # 작업 결과 확인
         if hasattr(operation, 'error') and operation.error:
@@ -790,7 +797,7 @@ async def text_to_video(
         output_filename = f"output_{timestamp}.mp4"
         output_path = OUTPUTS_DIR / output_filename
         
-        genai_client.files.download(file=generated_video.video)
+        client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
         # 비디오 객체를 메모리에 저장 (확장 기능용)
@@ -830,6 +837,7 @@ async def image_to_video(
             upload_paths.append(upload_path)
         
         model = "veo-3.1-generate-preview"
+        client = get_genai_client()
         
         # 프롬프트가 없으면 기본 프롬프트 사용
         if not prompt:
@@ -856,7 +864,7 @@ async def image_to_video(
                 mime_type=mime_type
             )
             
-            operation = genai_client.models.generate_videos(
+            operation = client.models.generate_videos(
                 model=model,
                 prompt=prompt,
                 image=safe_image,
@@ -889,7 +897,7 @@ async def image_to_video(
                 )
                 reference_images.append(reference_image)
             
-            operation = genai_client.models.generate_videos(
+            operation = client.models.generate_videos(
                 model=model,
                 prompt=prompt,
                 config=types.GenerateVideosConfig(
@@ -902,7 +910,7 @@ async def image_to_video(
         # 작업 완료 대기
         while not operation.done:
             time.sleep(10)
-            operation = genai_client.operations.get(operation)
+            operation = client.operations.get(operation)
         
         # 작업 결과 확인
         if hasattr(operation, 'error') and operation.error:
@@ -933,7 +941,7 @@ async def image_to_video(
         
         # 비디오 다운로드
         video = operation.response.generated_videos[0]
-        genai_client.files.download(file=video.video)
+        client.files.download(file=video.video)
         
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         output_filename = f"output_{timestamp}.mp4"
@@ -985,9 +993,10 @@ async def extend_video(
         logger.info(f"Retrieved video object from cache: {video_uuid}")
         
         model = "veo-3.1-generate-preview"
+        client = get_genai_client()
         
         # 비디오 확장 작업 시작 (previous_video.video 전달)
-        operation = genai_client.models.generate_videos(
+        operation = client.models.generate_videos(
             model=model,
             prompt=prompt,
             video=previous_video.video,
@@ -1003,7 +1012,7 @@ async def extend_video(
         # 작업 완료 대기
         while not operation.done:
             time.sleep(10)
-            operation = genai_client.operations.get(operation)
+            operation = client.operations.get(operation)
             logger.info("Waiting for video extension to complete...")
         
         # 작업 결과 확인
@@ -1039,7 +1048,7 @@ async def extend_video(
         output_filename = f"output_{timestamp}.mp4"
         output_path = OUTPUTS_DIR / output_filename
         
-        genai_client.files.download(file=generated_video.video)
+        client.files.download(file=generated_video.video)
         generated_video.video.save(str(output_path))
         
         # 확장된 비디오 객체를 메모리에 저장 (반복 확장 가능)
@@ -1089,8 +1098,9 @@ async def text_to_speech(
                 )
             ),
         )
+        client = get_genai_client()
         
-        for chunk in genai_client.models.generate_content_stream(
+        for chunk in client.models.generate_content_stream(
             model=model,
             contents=contents,
             config=generate_content_config,
