@@ -32,9 +32,6 @@ const promptModal = new bootstrap.Modal(document.getElementById('promptModal'));
 const promptList = document.getElementById('promptList');
 const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 const newSessionBtn = document.getElementById('newSessionBtn');
-const sessionAlert = document.getElementById('sessionAlert');
-const sessionMessage = document.getElementById('sessionMessage');
-const clearSessionBtn = document.getElementById('clearSessionBtn');
 const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
 const settingsBody = document.getElementById('settingsBody');
 
@@ -73,13 +70,6 @@ function logError(message) {
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
-// 이미지 세션 초기화 함수
-function clearImageSession() {
-    lastImageSessionId = null;
-    updateSessionUI();
-    log('이미지 세션 초기화됨');
-}
-
 // 세션 UI 업데이트 함수
 function updateSessionUI() {
     const operation = operationType.value;
@@ -88,19 +78,13 @@ function updateSessionUI() {
     if (isImageOperation && lastImageSessionId) {
         // 세션이 있으면 새 실행 버튼과 세션 알림 표시
         newSessionBtn.classList.remove('d-none');
-        sessionAlert.classList.remove('d-none');
-        sessionMessage.textContent = `편집 모드 활성화됨 (${operation === 'text-to-image' ? 'Text to Image' : 'Image to Image'})`;
         executeBtnLabel.textContent = '편집하기';
     } else {
         // 세션이 없으면 숨김
         newSessionBtn.classList.add('d-none');
-        sessionAlert.classList.add('d-none');
         executeBtnLabel.textContent = '실행하기';
     }
 }
-
-// 세션 초기화 버튼 이벤트
-clearSessionBtn.addEventListener('click', clearImageSession);
 
 // 설정 표시 토글
 function toggleSettingsVisibility() {
