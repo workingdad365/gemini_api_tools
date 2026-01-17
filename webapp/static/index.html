@@ -29,7 +29,7 @@
         </div>
     </nav>
 
-    <div class="container py-5">
+    <div class="container py-3">
         <div class="row">
             <div class="col-lg-8 mx-auto">
                 <!-- Header -->
@@ -43,12 +43,10 @@
                 -->
 
                 <!-- 작업 선택 -->
-                <div class="card mb-4 shadow border-0">
-                    <div class="card-header card-header-custom">
+                <div class="card mb-3 shadow border-0">
+                    <div class="card-header card-header-custom d-flex justify-content-between align-items-center py-2">
                         <h5 class="mb-0"><i class="bi bi-list-task me-2"></i> 작업 선택</h5>
-                    </div>
-                    <div class="card-body p-4">
-                        <select class="form-select form-select-lg" id="operationType">
+                        <select class="form-select form-select-sm" id="operationType" style="width: auto; min-width: 160px;">
                             <option value="text-to-image">Text to Image</option>
                             <option value="image-to-image">Image to Image</option>
                             <option value="text-to-video">Text to Video</option>
@@ -196,7 +194,7 @@
                 </div>
 
                 <!-- 프롬프트 입력 -->
-                <div class="card mb-5 shadow border-0">
+                <div class="card mb-3 shadow border-0">
                     <div class="card-header card-header-custom d-flex justify-content-between align-items-center">
                         <h5 class="mb-0 text-nowrap"><i class="bi bi-chat-left-text me-2"></i> 프롬프트 입력</h5>
                         <div>
@@ -215,7 +213,7 @@
                 </div>
 
                 <!-- 실행 버튼 -->
-                <div class="text-center mb-5">
+                <div class="text-center mb-3">
                     <button class="btn btn-secondary btn-lg rounded-pill px-4 py-2 shadow me-2 d-none" id="newSessionBtn">
                         <i class="bi bi-play-circle me-2"></i> <span class="fw-bold fs-6">실행하기</span>
                     </button>
