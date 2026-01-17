@@ -760,6 +760,7 @@ function displayResult(result, operation) {
     }
     
     resultContent.innerHTML = content;
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     
     // 비디오 확장 버튼 이벤트 리스너 추가 (720p인 경우만)
     if (fileType === 'video' && (operation === 'text-to-video' || operation === 'image-to-video') && lastVideoResolution === '720p') {

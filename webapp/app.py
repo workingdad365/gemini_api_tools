@@ -577,6 +577,7 @@ async def text_to_image(
     """Text to Image 작업 (Multi-turn 지원)"""
     try:
         logger.info(f"Text to Image request - prompt length: {len(prompt)}, aspect_ratio: {aspect_ratio}, model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
+        logger.info(f"Text to Image prompt: {prompt}")
         
         client = get_genai_client()
         current_session_id = session_id
@@ -720,6 +721,7 @@ async def image_to_image(
     upload_paths = []
     try:
         logger.info(f"Image to Image request - model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
+        logger.info(f"Image to Image prompt: {prompt}")
         
         client = get_genai_client()
         current_session_id = session_id
