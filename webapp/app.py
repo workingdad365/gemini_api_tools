@@ -635,6 +635,10 @@ async def text_to_image(
             logger.info(f"Created new chat session: {current_session_id}")
         
         # 응답 처리
+        if response is None or response.parts is None:
+            logger.error("Empty response parts from Gemini API")
+            raise HTTPException(status_code=500, detail="응답 데이터 없음")
+
         for part in response.parts:
             if part.text is not None:
                 text_response += part.text
@@ -797,6 +801,10 @@ async def image_to_image(
             upload_paths = []
         
         # 응답 처리 (공통)
+        if response is None or response.parts is None:
+            logger.error("Empty response parts from Gemini API")
+            raise HTTPException(status_code=500, detail="응답 데이터 없음")
+
         for part in response.parts:
             if part.text is not None:
                 text_response += part.text

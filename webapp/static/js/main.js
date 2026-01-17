@@ -103,7 +103,10 @@ function updateSessionUI() {
 clearSessionBtn.addEventListener('click', clearImageSession);
 
 // 설정 표시 토글
-toggleSettingsBtn.addEventListener('click', () => {
+function toggleSettingsVisibility() {
+    if (!settingsBody || !toggleSettingsBtn) {
+        return;
+    }
     isSettingsVisible = !isSettingsVisible;
     if (isSettingsVisible) {
         settingsBody.classList.remove('d-none');
@@ -112,7 +115,18 @@ toggleSettingsBtn.addEventListener('click', () => {
         settingsBody.classList.add('d-none');
         toggleSettingsBtn.innerHTML = '<i class="bi bi-chevron-down me-1"></i> 보이기';
     }
-});
+}
+
+if (toggleSettingsBtn) {
+    toggleSettingsBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        toggleSettingsVisibility();
+    });
+    toggleSettingsBtn.addEventListener('touchstart', (event) => {
+        event.preventDefault();
+        toggleSettingsVisibility();
+    }, { passive: false });
+}
 
 // 이미지/비디오 미리보기 업데이트 함수
 function updateImagePreview() {
@@ -448,7 +462,15 @@ async function executeTextToImage(prompt, aspectRatio, model, resolution, isNew 
         body: formData
     });
     
-    const result = await response.json();
+    let result;
+    try {
+        result = await response.json();
+    } catch (error) {
+        const text = await response.text();
+        const parseError = new Error('작업 실패: 응답 형식이 JSON이 아닙니다.');
+        parseError.details = text || error.message;
+        throw parseError;
+    }
     
     if (!response.ok) {
         const error = new Error(result.detail || '작업 실패');
@@ -482,7 +504,15 @@ async function executeImageToImage(prompt, files, model, resolution, isNew = tru
         body: formData
     });
     
-    const result = await response.json();
+    let result;
+    try {
+        result = await response.json();
+    } catch (error) {
+        const text = await response.text();
+        const parseError = new Error('작업 실패: 응답 형식이 JSON이 아닙니다.');
+        parseError.details = text || error.message;
+        throw parseError;
+    }
     
     if (!response.ok) {
         const error = new Error(result.detail || '작업 실패');
