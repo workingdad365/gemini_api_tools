@@ -20,6 +20,7 @@ const videoAspectRatio = document.getElementById('videoAspectRatio');
 const voiceName = document.getElementById('voiceName');
 const promptText = document.getElementById('promptText');
 const executeBtn = document.getElementById('executeBtn');
+const executeBtnLabel = document.getElementById('executeBtnLabel');
 const progressAlert = document.getElementById('progressAlert');
 const progressMessage = document.getElementById('progressMessage');
 const resultCard = document.getElementById('resultCard');
@@ -30,12 +31,21 @@ const loadPromptBtn = document.getElementById('loadPromptBtn');
 const promptModal = new bootstrap.Modal(document.getElementById('promptModal'));
 const promptList = document.getElementById('promptList');
 const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+const newSessionBtn = document.getElementById('newSessionBtn');
+const sessionAlert = document.getElementById('sessionAlert');
+const sessionMessage = document.getElementById('sessionMessage');
+const clearSessionBtn = document.getElementById('clearSessionBtn');
+const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
+const settingsBody = document.getElementById('settingsBody');
 
 let selectedFiles = [];
 let currentPromptId = null;
 let MAX_FILES = 3;
 let lastGeneratedVideoUUID = null; // 마지막 생성된 비디오 UUID 저장
 let lastVideoResolution = null; // 마지막 생성된 비디오 해상도 저장
+let lastImageSessionId = null; // 마지막 이미지 생성 세션 ID (Multi-turn용)
+let isSettingsVisible = false;
+let lastOperationType = null;
 
 // 로그 추가 함수
 function log(message, isLlmResponse = false) {
@@ -62,6 +72,47 @@ function logError(message) {
     logContainer.appendChild(logEntry);
     logContainer.scrollTop = logContainer.scrollHeight;
 }
+
+// 이미지 세션 초기화 함수
+function clearImageSession() {
+    lastImageSessionId = null;
+    updateSessionUI();
+    log('이미지 세션 초기화됨');
+}
+
+// 세션 UI 업데이트 함수
+function updateSessionUI() {
+    const operation = operationType.value;
+    const isImageOperation = (operation === 'text-to-image' || operation === 'image-to-image');
+    
+    if (isImageOperation && lastImageSessionId) {
+        // 세션이 있으면 새 실행 버튼과 세션 알림 표시
+        newSessionBtn.classList.remove('d-none');
+        sessionAlert.classList.remove('d-none');
+        sessionMessage.textContent = `편집 모드 활성화됨 (${operation === 'text-to-image' ? 'Text to Image' : 'Image to Image'})`;
+        executeBtnLabel.textContent = '편집하기';
+    } else {
+        // 세션이 없으면 숨김
+        newSessionBtn.classList.add('d-none');
+        sessionAlert.classList.add('d-none');
+        executeBtnLabel.textContent = '실행하기';
+    }
+}
+
+// 세션 초기화 버튼 이벤트
+clearSessionBtn.addEventListener('click', clearImageSession);
+
+// 설정 표시 토글
+toggleSettingsBtn.addEventListener('click', () => {
+    isSettingsVisible = !isSettingsVisible;
+    if (isSettingsVisible) {
+        settingsBody.classList.remove('d-none');
+        toggleSettingsBtn.innerHTML = '<i class="bi bi-chevron-up me-1"></i> 숨기기';
+    } else {
+        settingsBody.classList.add('d-none');
+        toggleSettingsBtn.innerHTML = '<i class="bi bi-chevron-down me-1"></i> 보이기';
+    }
+});
 
 // 이미지/비디오 미리보기 업데이트 함수
 function updateImagePreview() {
@@ -170,6 +221,12 @@ function updateResolutionVisibility() {
 function updateUIForOperation() {
     const operation = operationType.value;
     
+    // 작업 유형 변경 시 이미지 세션 초기화
+    if (lastOperationType && lastOperationType !== operation) {
+        lastImageSessionId = null;
+    }
+    lastOperationType = operation;
+    
     // 파일 입력 초기화
     selectedFiles = [];
     selectedFileName.textContent = '';
@@ -204,6 +261,9 @@ function updateUIForOperation() {
     
     // 해상도 옵션 표시 여부 업데이트
     updateResolutionVisibility();
+    
+    // 세션 UI 업데이트
+    updateSessionUI();
 }
 
 // 작업 유형 변경 시
@@ -259,8 +319,8 @@ dropZone.addEventListener('drop', (e) => {
     }
 });
 
-// 실행 버튼
-executeBtn.addEventListener('click', async () => {
+// 공통 실행 함수
+async function executeOperation(isNew = false) {
     const operation = operationType.value;
     const prompt = promptText.value.trim();
     
@@ -270,17 +330,26 @@ executeBtn.addEventListener('click', async () => {
         return;
     }
     
-    if ((operation === 'image-to-image' || operation === 'image-to-video') && selectedFiles.length === 0) {
+    // Image to Image에서 새로 만들기 모드일 때만 파일 필수
+    if (operation === 'image-to-image' && isNew && selectedFiles.length === 0) {
+        alert('입력 파일을 선택하세요.');
+        return;
+    }
+    
+    // Image to Video는 항상 파일 필수
+    if (operation === 'image-to-video' && selectedFiles.length === 0) {
         alert('입력 파일을 선택하세요.');
         return;
     }
     
     // UI 상태 변경
     executeBtn.disabled = true;
+    newSessionBtn.disabled = true;
     progressAlert.classList.remove('d-none');
     resultCard.classList.add('d-none');
     
-    log(`작업 시작: ${operation}`);
+    const modeText = isNew ? '실행하기' : (lastImageSessionId ? '편집하기' : '실행하기');
+    log(`작업 시작: ${operation} (${modeText})`);
     progressMessage.textContent = '처리 중...';
     
     try {
@@ -288,10 +357,10 @@ executeBtn.addEventListener('click', async () => {
         
         switch (operation) {
             case 'text-to-image':
-                result = await executeTextToImage(prompt, aspectRatio.value, imageModel.value, imageResolution.value);
+                result = await executeTextToImage(prompt, aspectRatio.value, imageModel.value, imageResolution.value, isNew);
                 break;
             case 'image-to-image':
-                result = await executeImageToImage(prompt, selectedFiles, imageModel.value, imageResolution.value);
+                result = await executeImageToImage(prompt, selectedFiles, imageModel.value, imageResolution.value, isNew);
                 break;
             case 'text-to-video':
                 result = await executeTextToVideo(prompt, videoResolution.value, videoAspectRatio.value);
@@ -305,6 +374,13 @@ executeBtn.addEventListener('click', async () => {
         }
         
         if (result && result.status === 'success') {
+            // 세션 ID 저장 (Text to Image, Image to Image인 경우)
+            if ((operation === 'text-to-image' || operation === 'image-to-image') && result.session_id) {
+                lastImageSessionId = result.session_id;
+                log(`세션 ID 저장됨: ${lastImageSessionId}`);
+                updateSessionUI();
+            }
+            
             // LLM 응답이 있으면 로그에 표시 (파란색으로)
             if (result.llm_response) {
                 log(`LLM 응답: ${result.llm_response}`, true);
@@ -326,17 +402,46 @@ executeBtn.addEventListener('click', async () => {
         alert('작업 실패: 자세한 내용은 로그를 확인하세요.');
     } finally {
         executeBtn.disabled = false;
+        newSessionBtn.disabled = false;
         progressAlert.classList.add('d-none');
     }
+}
+
+// 실행 버튼 (Multi-turn 모드 또는 새로 만들기)
+executeBtn.addEventListener('click', async () => {
+    const operation = operationType.value;
+    const isImageOperation = (operation === 'text-to-image' || operation === 'image-to-image');
+    
+    // 이미지 작업이고 세션이 있으면 Multi-turn 모드 (isNew=false)
+    // 세션이 없으면 새로 만들기 모드 (isNew=true)
+    const isNew = !isImageOperation || !lastImageSessionId;
+    await executeOperation(isNew);
+});
+
+// 새로 만들기 버튼 (세션 초기화 후 실행)
+newSessionBtn.addEventListener('click', async () => {
+    // 세션 초기화
+    lastImageSessionId = null;
+    updateSessionUI();
+    
+    // 새로 만들기 모드로 실행
+    await executeOperation(true);
 });
 
 // API 호출 함수들
-async function executeTextToImage(prompt, aspectRatio, model, resolution) {
+async function executeTextToImage(prompt, aspectRatio, model, resolution, isNew = true) {
     const formData = new FormData();
     formData.append('prompt', prompt);
     formData.append('aspect_ratio', aspectRatio);
     formData.append('model', model);
     formData.append('resolution', resolution);
+    formData.append('is_new', isNew);
+    
+    // Multi-turn 모드: 세션 ID 전달
+    if (!isNew && lastImageSessionId) {
+        formData.append('session_id', lastImageSessionId);
+        log(`Multi-turn 모드: 세션 ${lastImageSessionId} 사용`);
+    }
     
     const response = await fetch('/api/text-to-image', {
         method: 'POST',
@@ -354,16 +459,23 @@ async function executeTextToImage(prompt, aspectRatio, model, resolution) {
     return result;
 }
 
-async function executeImageToImage(prompt, files, model, resolution) {
+async function executeImageToImage(prompt, files, model, resolution, isNew = true) {
     const formData = new FormData();
     formData.append('prompt', prompt);
     formData.append('model', model);
     formData.append('resolution', resolution);
+    formData.append('is_new', isNew);
     
-    // 멀티 파일 업로드
-    files.forEach((file, index) => {
-        formData.append('files', file);
-    });
+    // Multi-turn 모드: 세션 ID 전달 (파일은 전송하지 않음)
+    if (!isNew && lastImageSessionId) {
+        formData.append('session_id', lastImageSessionId);
+        log(`Multi-turn 모드: 세션 ${lastImageSessionId} 사용 (이미지 없이 프롬프트만 전송)`);
+    } else {
+        // 새로 만들기 모드: 멀티 파일 업로드
+        files.forEach((file, index) => {
+            formData.append('files', file);
+        });
+    }
     
     const response = await fetch('/api/image-to-image', {
         method: 'POST',

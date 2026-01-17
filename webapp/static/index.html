@@ -83,10 +83,13 @@
 
                 <!-- 설정 -->
                 <div class="card mb-4 shadow border-0">
-                    <div class="card-header card-header-custom">
+                    <div class="card-header card-header-custom d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="bi bi-gear me-2"></i> 설정</h5>
+                        <button class="btn btn-sm btn-outline-secondary" id="toggleSettingsBtn">
+                            <i class="bi bi-chevron-down me-1"></i> 보이기
+                        </button>
                     </div>
-                    <div class="card-body p-4">
+                    <div class="card-body p-4 d-none" id="settingsBody">
                         <!-- 이미지 생성 모델 선택 -->
                         <div class="mb-4" id="imageModelGroup" style="display: none;">
                             <label class="form-label fw-bold text-dark">이미지 생성 모델</label>
@@ -213,9 +216,25 @@
 
                 <!-- 실행 버튼 -->
                 <div class="text-center mb-5">
-                    <button class="btn btn-primary btn-lg rounded-pill px-5 py-3 shadow-lg" id="executeBtn">
-                        <i class="bi bi-play-circle-fill me-2"></i> <span class="fw-bold">실행하기</span>
+                    <button class="btn btn-outline-secondary btn-lg rounded-pill px-4 py-3 shadow me-2 d-none" id="newSessionBtn">
+                        <i class="bi bi-play-circle me-2"></i> <span class="fw-bold">실행하기</span>
                     </button>
+                    <button class="btn btn-primary btn-lg rounded-pill px-5 py-3 shadow-lg" id="executeBtn">
+                        <i class="bi bi-play-circle-fill me-2"></i> <span class="fw-bold" id="executeBtnLabel">실행하기</span>
+                    </button>
+                </div>
+                
+                <!-- Multi-turn 세션 정보 표시 -->
+                <div class="alert alert-success d-none border-0 shadow-sm mb-4" id="sessionAlert" role="alert">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <i class="bi bi-link-45deg me-2"></i>
+                            <span id="sessionMessage">Multi-turn 편집 모드 활성화됨</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-success" id="clearSessionBtn">
+                            <i class="bi bi-x-circle"></i> 세션 초기화
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 진행 상태 -->
