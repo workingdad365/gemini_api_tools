@@ -546,12 +546,27 @@ async def logout(response: Response, session_token: str = Cookie(None)):
     redirect_response.delete_cookie(key="session_token")
     return redirect_response
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"]) # HEAD 메서드 명시적 추가
 async def read_root(request: Request, session_token: str = Cookie(None)):
     """메인 페이지 (인증 필요)"""
+    
+    # 1. UptimeRobot 등 모니터링 봇을 위한 예외 처리 (선택 사항)
+    # 봇은 쿠키가 없으므로 항상 302 리다이렉트가 발생.
+    if request.method == "HEAD":
+        return Response(status_code=200) # HEAD 요청에는 즉시 200 응답
+
     if not verify_session(session_token):
         return RedirectResponse(url="/login", status_code=302)
+        
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+# @app.get("/")
+# async def read_root(request: Request, session_token: str = Cookie(None)):
+#     """메인 페이지 (인증 필요)"""
+#     if not verify_session(session_token):
+#         return RedirectResponse(url="/login", status_code=302)
+#     return FileResponse(str(STATIC_DIR / "index.html"))
 
 @app.get("/health")
 async def health_check():
