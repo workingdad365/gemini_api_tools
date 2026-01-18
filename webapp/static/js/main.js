@@ -932,5 +932,10 @@ loadPromptBtn.addEventListener('click', async () => {
 
 // 초기화
 updateUIForOperation();
+
+// Bootstrap 툴팁 초기화
+const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+tooltipTriggerList.forEach(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+
 log('웹 애플리케이션 준비 완료');
 
