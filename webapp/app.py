@@ -152,6 +152,11 @@ SAFETY_SETTINGS = [
     ),
 ]
 
+# Favicon 라우트 (브라우저 기본 요청 처리)
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse(STATIC_DIR / "img" / "favicon.ico")
+
 # 정적 파일 제공
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
