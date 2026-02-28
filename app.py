@@ -100,6 +100,10 @@ else:
 
 logger.info("API keys loaded successfully")
 
+# 환경변수에서 API 키 제거 (SDK 내부 경고 방지 - 명시적으로 키를 전달하므로 불필요)
+os.environ.pop("GOOGLE_API_KEY", None)
+os.environ.pop("GEMINI_API_KEY", None)
+
 # 모델 설정 (환경변수에서 로드)
 STANDARD_MODEL = os.getenv("STANDARD_MODEL", "gemini-2.5-flash-image")
 ADVANCED_MODEL = os.getenv("ADVANCED_MODEL", "gemini-3.1-flash-image-preview")

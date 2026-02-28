@@ -1,27 +1,19 @@
 [project]
-name = "gemini-api-tools"
+name = "gemini-api-tools-webapp"
 version = "1.0.0"
-description = "Google Gemini API Tools - Image, Video, Audio generation GUI"
-requires-python = ">=3.10"
+description = "Google Gemini API Tools - Web Application"
+requires-python = ">=3.12,<3.13"
 dependencies = [
-    "google-generativeai>=0.8.5",
-    "google-genai>=1.45.0",
-    "pillow>=11.3.0",
-    "python-dotenv>=1.1.1",
-    "tkinterdnd2>=0.4.3",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.6",
+    "python-dotenv>=1.0.0",
+    "google-generativeai>=0.3.0",
+    "google-genai>=1.52.0",
+    "pillow>=10.0.0",
+    "pydantic>=2.0.0",
 ]
 
 [tool.uv]
-# 패키지 설치만 하고 빌드하지 않음
 package = false
-
-[tool.uv.workspace]
-members = [
-    "reference",
-]
 

@@ -1,35 +1,27 @@
-# 프로젝트 디렉토리
-input/
-output/
-reference/
-temp/
-
-# 가상환경
-venv/
-.venv/
-env/
-ENV/
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-*.egg
-*.egg-info/
-dist/
-build/
-*.whl
-
-# 환경 변수
-.env
-.env.local
+.Python
+venv/
+.venv/
+env/
+ENV/
 
 # 데이터베이스
 data.db
-*.db
-*.sqlite
-*.sqlite3
+data.db-journal
+
+# 서버 로그 및 PID
+server.log
+server.pid
+
+# 업로드 및 출력 파일
+uploads/*
+!uploads/.gitkeep
+outputs/*
+!outputs/.gitkeep
 
 # IDE
 .vscode/
@@ -37,15 +29,12 @@ data.db
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
+Thumbs.db
 
-# 로그
-*.log
-
-# Jupyter Notebook
-.ipynb_checkpoints/
-
-# 임시 파일
-*.tmp
-*.bak
+# 환경 변수
+.env
+.env.local
 
