@@ -100,6 +100,13 @@ else:
 
 logger.info("API keys loaded successfully")
 
+# 모델 설정 (환경변수에서 로드)
+STANDARD_MODEL = os.getenv("STANDARD_MODEL", "gemini-2.5-flash-image")
+ADVANCED_MODEL = os.getenv("ADVANCED_MODEL", "gemini-3.1-flash-image-preview")
+STANDARD_MODEL_ALIAS = os.getenv("STANDARD_MODEL_ALIAS", "Nano Banana")
+ADVANCED_MODEL_ALIAS = os.getenv("ADVANCED_MODEL_ALIAS", "Nano Banana 2")
+logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
+
 def get_genai_client() -> genai.Client:
     """매 요청마다 랜덤 API 키를 선택하여 새 클라이언트 생성"""
     selected_key = random.choice(api_key_list)
@@ -585,17 +592,29 @@ async def health_check():
         "db_exists": DB_PATH.exists()
     })
 
+@app.get("/api/config")
+async def get_config():
+    """프론트엔드에 모델 설정 정보 제공"""
+    return JSONResponse({
+        "standard_model": STANDARD_MODEL,
+        "advanced_model": ADVANCED_MODEL,
+        "standard_model_alias": STANDARD_MODEL_ALIAS,
+        "advanced_model_alias": ADVANCED_MODEL_ALIAS,
+    })
+
 @app.post("/api/text-to-image")
 async def text_to_image(
     prompt: str = Form(...),
     aspect_ratio: str = Form("16:9"),
-    model: str = Form("gemini-2.5-flash-image"),
-    resolution: str = Form("2K"),
+    model: str = Form(None),
+    resolution: str = Form("1K"),
     is_new: bool = Form(True),
     session_id: Optional[str] = Form(None)
 ):
     """Text to Image 작업 (Multi-turn 지원)"""
     try:
+        if model is None:
+            model = STANDARD_MODEL
         logger.info(f"Text to Image request - prompt length: {len(prompt)}, aspect_ratio: {aspect_ratio}, model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
         logger.info(f"Text to Image prompt: {prompt}")
         
@@ -732,14 +751,16 @@ async def text_to_image(
 async def image_to_image(
     prompt: str = Form(...),
     files: list[UploadFile] = File(None),
-    model: str = Form("gemini-2.5-flash-image"),
-    resolution: str = Form("2K"),
+    model: str = Form(None),
+    resolution: str = Form("1K"),
     is_new: bool = Form(True),
     session_id: Optional[str] = Form(None)
 ):
     """Image to Image 작업 (멀티 이미지 지원, Multi-turn 지원)"""
     upload_paths = []
     try:
+        if model is None:
+            model = STANDARD_MODEL
         logger.info(f"Image to Image request - model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
         logger.info(f"Image to Image prompt: {prompt}")
         
@@ -772,7 +793,7 @@ async def image_to_image(
                 raise HTTPException(status_code=400, detail="새로 만들기 모드에서는 이미지 파일이 필요합니다.")
             
             # 모델에 따라 최대 파일 수 결정
-            max_files = 14 if model == "gemini-3-pro-image-preview" else 3
+            max_files = 14 if model == ADVANCED_MODEL else 3
             files_to_process = files[:max_files]
             logger.info(f"Processing {len(files_to_process)} images for image-to-image with model {model}")
             

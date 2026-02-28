@@ -44,6 +44,39 @@ let lastImageSessionId = null; // 마지막 이미지 생성 세션 ID (Multi-tu
 let isSettingsVisible = false;
 let lastOperationType = null;
 
+// 모델 설정 (서버에서 로드)
+let modelConfig = {
+    standard_model: '',
+    advanced_model: '',
+    standard_model_alias: '',
+    advanced_model_alias: ''
+};
+
+// 서버에서 모델 설정 로드
+async function loadModelConfig() {
+    try {
+        const response = await fetch('/api/config');
+        if (response.ok) {
+            modelConfig = await response.json();
+            log(`모델 설정 로드: ${modelConfig.advanced_model_alias}, ${modelConfig.standard_model_alias}`);
+        }
+    } catch (e) {
+        log('모델 설정 로드 실패, 기본값 사용');
+    }
+    // 셀렉트 옵션 업데이트
+    const imageModelSelect = document.getElementById('imageModel');
+    imageModelSelect.innerHTML = '';
+    const advOpt = document.createElement('option');
+    advOpt.value = modelConfig.advanced_model;
+    advOpt.textContent = modelConfig.advanced_model_alias;
+    advOpt.selected = true;
+    imageModelSelect.appendChild(advOpt);
+    const stdOpt = document.createElement('option');
+    stdOpt.value = modelConfig.standard_model;
+    stdOpt.textContent = modelConfig.standard_model_alias;
+    imageModelSelect.appendChild(stdOpt);
+}
+
 // 로그 추가 함수
 function log(message, isLlmResponse = false) {
     const now = new Date();
@@ -189,7 +222,7 @@ function updateMaxFiles() {
     const selectedModel = imageModel.value;
     
     if (operation === 'image-to-image') {
-        if (selectedModel === 'gemini-3-pro-image-preview') {
+        if (selectedModel === modelConfig.advanced_model) {
             MAX_FILES = 14;
         } else {
             MAX_FILES = 3;
@@ -208,7 +241,7 @@ function updateResolutionVisibility() {
     
     // text-to-image 또는 image-to-image이고, Nano-Banana Pro 모델인 경우에만 해상도 표시
     if ((operation === 'text-to-image' || operation === 'image-to-image') && 
-        selectedModel === 'gemini-3-pro-image-preview') {
+        selectedModel === modelConfig.advanced_model) {
         imageResolutionGroup.style.display = 'block';
     } else {
         imageResolutionGroup.style.display = 'none';
@@ -931,7 +964,9 @@ loadPromptBtn.addEventListener('click', async () => {
 });
 
 // 초기화
-updateUIForOperation();
+loadModelConfig().then(() => {
+    updateUIForOperation();
+});
 
 // Bootstrap 툴팁 초기화
 const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
