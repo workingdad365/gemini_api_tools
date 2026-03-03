@@ -4,14 +4,6 @@
 # 스크립트 위치로 이동
 cd "$(dirname "$0")"
 
-# 환경 변수 로드 (루트의 .env 파일)
-if [ -f ".env" ]; then
-    export $(cat .env | grep -v '^#' | xargs)
-    echo "환경 변수 로드됨: .env"
-else
-    echo "경고: .env 파일을 찾을 수 없습니다."
-fi
-
 # Python 버퍼링 비활성화 및 로그 레벨 설정
 export PYTHONUNBUFFERED=1
 
