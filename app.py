@@ -105,10 +105,10 @@ os.environ.pop("GOOGLE_API_KEY", None)
 os.environ.pop("GEMINI_API_KEY", None)
 
 # 모델 설정 (환경변수에서 로드)
-STANDARD_MODEL = os.getenv("STANDARD_MODEL", "gemini-2.5-flash-image")
-ADVANCED_MODEL = os.getenv("ADVANCED_MODEL", "gemini-3.1-flash-image-preview")
-STANDARD_MODEL_ALIAS = os.getenv("STANDARD_MODEL_ALIAS", "Nano Banana")
-ADVANCED_MODEL_ALIAS = os.getenv("ADVANCED_MODEL_ALIAS", "Nano Banana 2")
+STANDARD_MODEL = os.getenv("STANDARD_MODEL", "gemini-3.1-flash-image-preview")
+ADVANCED_MODEL = os.getenv("ADVANCED_MODEL", "gemini-3-pro-image-preview")
+STANDARD_MODEL_ALIAS = os.getenv("STANDARD_MODEL_ALIAS", "Nano Banana 2")
+ADVANCED_MODEL_ALIAS = os.getenv("ADVANCED_MODEL_ALIAS", "Nano Banana Pro")
 logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
 
 def get_genai_client() -> genai.Client:
@@ -796,8 +796,8 @@ async def image_to_image(
             if not files:
                 raise HTTPException(status_code=400, detail="새로 만들기 모드에서는 이미지 파일이 필요합니다.")
             
-            # 모델에 따라 최대 파일 수 결정
-            max_files = 14 if model == ADVANCED_MODEL else 3
+            # 두 모델 모두 최대 14장 이미지 참조 지원
+            max_files = 14
             files_to_process = files[:max_files]
             logger.info(f"Processing {len(files_to_process)} images for image-to-image with model {model}")
             
