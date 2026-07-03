@@ -102,10 +102,12 @@ logger.info("API keys loaded successfully")
 
 # 모델 설정 (환경변수에서 로드)
 STANDARD_MODEL = os.getenv("STANDARD_MODEL", "gemini-2.5-flash-image")
+PRO_MODEL = os.getenv("PRO_MODEL", "gemini-3-pro-preview")
 ADVANCED_MODEL = os.getenv("ADVANCED_MODEL", "gemini-3.1-flash-image-preview")
 STANDARD_MODEL_ALIAS = os.getenv("STANDARD_MODEL_ALIAS", "Nano Banana")
+PRO_MODEL_ALIAS = os.getenv("PRO_MODEL_ALIAS", "Nano Banana Pro")
 ADVANCED_MODEL_ALIAS = os.getenv("ADVANCED_MODEL_ALIAS", "Nano Banana 2")
-logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
+logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), PRO: {PRO_MODEL} ({PRO_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
 
 def get_genai_client() -> genai.Client:
     """매 요청마다 랜덤 API 키를 선택하여 새 클라이언트 생성"""
@@ -198,8 +200,12 @@ class TaskStatus(BaseModel):
     output_file: Optional[str] = None
 
 # 유틸리티 함수
-def pil_to_bytes(pil_image: Image.Image, image_format: str = 'JPEG') -> bytes:
-    """PIL Image를 bytes로 변환"""
+def pil_to_bytes(pil_image, image_format: str = 'JPEG') -> bytes:
+    """PIL Image 또는 google-genai Image를 bytes로 변환"""
+    # google-genai Image 객체는 image_bytes 속성으로 원본 바이트를 보유
+    image_bytes = getattr(pil_image, "image_bytes", None)
+    if image_bytes is not None:
+        return image_bytes
     img_byte_arr = BytesIO()
     pil_image.save(img_byte_arr, format=image_format)
     return img_byte_arr.getvalue()
@@ -293,6 +299,16 @@ def build_user_parts_for_images(upload_paths: list[Path], prompt: str) -> list[t
         parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
     parts.append(types.Part.from_text(text=prompt))
     return parts
+
+def build_user_content_with_image(image_bytes: bytes, mime_type: str, prompt: str) -> types.Content:
+    """저장된 이미지와 프롬프트로 사용자 입력 Content를 생성한다."""
+    return types.Content(
+        role="user",
+        parts=[
+            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            types.Part.from_text(text=prompt),
+        ],
+    )
 
 def get_client_ip(request: Request) -> str:
     """클라이언트 IP 주소 추출"""
@@ -597,10 +613,42 @@ async def get_config():
     """프론트엔드에 모델 설정 정보 제공"""
     return JSONResponse({
         "standard_model": STANDARD_MODEL,
+        "pro_model": PRO_MODEL,
         "advanced_model": ADVANCED_MODEL,
         "standard_model_alias": STANDARD_MODEL_ALIAS,
+        "pro_model_alias": PRO_MODEL_ALIAS,
         "advanced_model_alias": ADVANCED_MODEL_ALIAS,
     })
+
+def store_image_chat_turn(
+    session_id: str,
+    _history: list,
+    user_content: types.Content,
+    _source_content: types.Content,
+    image_bytes: bytes,
+    mime_type: str,
+    client: genai.Client,
+    model: str,
+) -> None:
+    """이미지 생성 세션의 대화 기록에 이번 턴(사용자 입력 + 모델 응답)을 추가한다.
+
+    Args:
+        session_id: 대상 세션 식별자(UUID).
+        _history: 이전 구현과의 호출 호환성을 위한 값.
+        user_content: 이번 턴의 사용자 입력 Content.
+        _source_content: 이전 구현과의 호출 호환성을 위한 값.
+        image_bytes: 이번 턴에서 생성된 이미지의 원본 바이트.
+        mime_type: 생성 이미지 MIME 타입.
+        client: 현재 요청에서 사용한 GenAI 클라이언트.
+        model: 사용한 모델 이름.
+    """
+    image_chat_sessions[session_id] = {
+        "history": [user_content],
+        "last_image_bytes": image_bytes,
+        "last_image_mime_type": mime_type,
+        "client": client,
+        "model": model,
+    }
 
 @app.post("/api/text-to-image")
 async def text_to_image(
@@ -621,58 +669,44 @@ async def text_to_image(
         client = get_genai_client()
         current_session_id = session_id
         
-        # chat 생성용 config (response_modalities만 설정)
-        chat_config = types.GenerateContentConfig(
+        # generate_content용 config (response_modalities + image_config)
+        generation_config = types.GenerateContentConfig(
             safety_settings=SAFETY_SETTINGS,
             response_modalities=["TEXT", "IMAGE"],
-        )
-        
-        # send_message용 config (image_config 포함)
-        message_config = types.GenerateContentConfig(
             image_config=build_image_config(aspect_ratio=aspect_ratio, resolution=resolution),
         )
         
         logger.info("Calling Gemini API...")
         text_response = ""  # 텍스트 응답 누적
         
-        # Multi-turn 모드: 채팅 세션 사용
+        # Multi-turn 모드: 마지막 출력 이미지를 새 사용자 입력 이미지로 사용
         if not is_new and session_id and session_id in image_chat_sessions:
-            # 기존 세션 사용
-            chat = image_chat_sessions[session_id]["chat"]
-            logger.info(f"Using existing chat session: {session_id}")
-            
-            # 메시지 전송 (message_config 포함)
-            response = chat.send_message(prompt, config=message_config)
+            session_state = image_chat_sessions[session_id]
+            image_bytes = session_state.get("last_image_bytes")
+            image_mime_type = session_state.get("last_image_mime_type", "image/png")
+            if not image_bytes:
+                raise HTTPException(status_code=400, detail="편집할 이전 이미지가 세션에 없습니다.")
+            user_content = build_user_content_with_image(image_bytes, image_mime_type, prompt)
+            session_history = []
+            contents = [user_content]
+            logger.info(f"Using previous generated image for editing: {session_id}")
         else:
-            # 새 이미지 생성은 generate_content로 처리
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_modalities=["TEXT", "IMAGE"],
-                    image_config=build_image_config(aspect_ratio=aspect_ratio, resolution=resolution),
-                ),
+            # 새 세션 시작
+            user_content = types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=prompt)],
             )
-            
-            # 새 세션 생성 (history 포함)
+            session_history = []
+            contents = [user_content]
             current_session_id = str(uuid.uuid4())
-            history = [
-                types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=prompt)],
-                ),
-                types.Content(
-                    role="model",
-                    parts=response.parts,
-                ),
-            ]
-            chat = client.chats.create(
-                model=model,
-                config=chat_config,
-                history=history,
-            )
-            image_chat_sessions[current_session_id] = {"chat": chat, "client": client}
             logger.info(f"Created new chat session: {current_session_id}")
+        
+        # 생성 (chat 객체 대신 대화 기록을 직접 전달)
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=generation_config,
+        )
         
         # 응답 처리
         if response is None or response.parts is None:
@@ -693,6 +727,13 @@ async def text_to_image(
                     image.save(str(output_path))
                     
                     logger.info(f"Image saved successfully: {output_filename}")
+                    # 다음 턴을 위해 대화 기록 갱신 (inline bytes + thought_signature 보존)
+                    store_image_chat_turn(
+                        current_session_id, session_history, user_content,
+                        response.candidates[0].content,
+                        pil_to_bytes(image, image_format="PNG"), "image/png",
+                        client, model,
+                    )
                     response_data = {
                         "status": "success",
                         "message": "이미지가 생성되었습니다.",
@@ -717,6 +758,13 @@ async def text_to_image(
                     f.write(data_buffer)
                 
                 logger.info(f"Image saved successfully: {output_filename}")
+                # 다음 턴을 위해 대화 기록 갱신 (inline bytes + thought_signature 보존)
+                store_image_chat_turn(
+                    current_session_id, session_history, user_content,
+                    response.candidates[0].content,
+                    data_buffer, inline_data.mime_type,
+                    client, model,
+                )
                 response_data = {
                     "status": "success",
                     "message": "이미지가 생성되었습니다.",
@@ -768,24 +816,24 @@ async def image_to_image(
         current_session_id = session_id
         text_response = ""  # 텍스트 응답 누적
         
-        # chat 생성용 config (response_modalities만 설정)
-        chat_config = types.GenerateContentConfig(
+        # generate_content용 config (response_modalities + image_config)
+        generation_config = types.GenerateContentConfig(
             safety_settings=SAFETY_SETTINGS,
             response_modalities=["TEXT", "IMAGE"],
-        )
-        
-        # send_message용 config (image_config 포함)
-        message_config = types.GenerateContentConfig(
             image_config=build_image_config(resolution=resolution),
         )
         
-        # Multi-turn 모드: 기존 세션 사용 (프롬프트만 전송)
+        # Multi-turn 모드: 마지막 출력 이미지를 새 사용자 입력 이미지로 사용
         if not is_new and session_id and session_id in image_chat_sessions:
-            chat = image_chat_sessions[session_id]["chat"]
-            logger.info(f"Using existing chat session for image editing: {session_id}")
-            
-            # 메시지 전송 (message_config 포함)
-            response = chat.send_message(prompt, config=message_config)
+            session_state = image_chat_sessions[session_id]
+            image_bytes = session_state.get("last_image_bytes")
+            image_mime_type = session_state.get("last_image_mime_type", "image/png")
+            if not image_bytes:
+                raise HTTPException(status_code=400, detail="편집할 이전 이미지가 세션에 없습니다.")
+            user_content = build_user_content_with_image(image_bytes, image_mime_type, prompt)
+            session_history = []
+            contents = [user_content]
+            logger.info(f"Using previous generated image for image editing: {session_id}")
         
         # 새 세션 생성 모드: 이미지와 프롬프트 함께 전송
         else:
@@ -793,7 +841,7 @@ async def image_to_image(
                 raise HTTPException(status_code=400, detail="새로 만들기 모드에서는 이미지 파일이 필요합니다.")
             
             # 모델에 따라 최대 파일 수 결정
-            max_files = 14 if model == ADVANCED_MODEL else 3
+            max_files = 14 if model in (ADVANCED_MODEL, PRO_MODEL) else 3
             files_to_process = files[:max_files]
             logger.info(f"Processing {len(files_to_process)} images for image-to-image with model {model}")
             
@@ -804,44 +852,28 @@ async def image_to_image(
                     buffer.write(await file.read())
                 upload_paths.append(upload_path)
             
-            # 이미지 로드
-            images = [Image.open(path) for path in upload_paths]
-            
-            # 새 이미지 생성은 generate_content로 처리
-            response = client.models.generate_content(
-                model=model,
-                contents=images + [prompt],
-                config=types.GenerateContentConfig(
-                    response_modalities=["TEXT", "IMAGE"],
-                    image_config=build_image_config(resolution=resolution),
-                ),
+            # 입력 이미지 + 프롬프트로 사용자 파트 구성 (history와 요청에 동일하게 사용)
+            user_content = types.Content(
+                role="user",
+                parts=build_user_parts_for_images(upload_paths, prompt),
             )
-            
-            # 새 세션 생성 (history 포함)
+            session_history = []
+            contents = [user_content]
             current_session_id = str(uuid.uuid4())
-            history = [
-                types.Content(
-                    role="user",
-                    parts=build_user_parts_for_images(upload_paths, prompt),
-                ),
-                types.Content(
-                    role="model",
-                    parts=response.parts,
-                ),
-            ]
-            chat = client.chats.create(
-                model=model,
-                config=chat_config,
-                history=history,
-            )
-            image_chat_sessions[current_session_id] = {"chat": chat, "client": client}
             logger.info(f"Created new chat session for image-to-image: {current_session_id}")
             
-            # 업로드된 파일 삭제
+            # 업로드된 파일 삭제 (바이트는 user_content에 이미 포함됨)
             for upload_path in upload_paths:
                 if upload_path.exists():
                     upload_path.unlink()
             upload_paths = []
+        
+        # 생성 (chat 객체 대신 대화 기록을 직접 전달)
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=generation_config,
+        )
         
         # 응답 처리 (공통)
         if response is None or response.parts is None:
@@ -861,6 +893,13 @@ async def image_to_image(
                     output_path = OUTPUTS_DIR / output_filename
                     image.save(str(output_path))
                     
+                    # 다음 턴을 위해 대화 기록 갱신 (inline bytes + thought_signature 보존)
+                    store_image_chat_turn(
+                        current_session_id, session_history, user_content,
+                        response.candidates[0].content,
+                        pil_to_bytes(image, image_format="PNG"), "image/png",
+                        client, model,
+                    )
                     response_data = {
                         "status": "success",
                         "message": "이미지가 생성되었습니다.",
@@ -882,6 +921,13 @@ async def image_to_image(
                 
                 img.save(output_path)
                 
+                # 다음 턴을 위해 대화 기록 갱신 (inline bytes + thought_signature 보존)
+                store_image_chat_turn(
+                    current_session_id, session_history, user_content,
+                    response.candidates[0].content,
+                    part.inline_data.data, part.inline_data.mime_type,
+                    client, model,
+                )
                 response_data = {
                     "status": "success",
                     "message": "이미지가 생성되었습니다.",

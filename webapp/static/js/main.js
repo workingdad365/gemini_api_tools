@@ -47,8 +47,10 @@ let lastOperationType = null;
 // 모델 설정 (서버에서 로드)
 let modelConfig = {
     standard_model: '',
+    pro_model: '',
     advanced_model: '',
     standard_model_alias: '',
+    pro_model_alias: '',
     advanced_model_alias: ''
 };
 
@@ -58,12 +60,12 @@ async function loadModelConfig() {
         const response = await fetch('/api/config');
         if (response.ok) {
             modelConfig = await response.json();
-            log(`모델 설정 로드: ${modelConfig.advanced_model_alias}, ${modelConfig.standard_model_alias}`);
+            log(`모델 설정 로드: ${modelConfig.advanced_model_alias}, ${modelConfig.pro_model_alias}`);
         }
     } catch (e) {
         log('모델 설정 로드 실패, 기본값 사용');
     }
-    // 셀렉트 옵션 업데이트
+    // 셀렉트 옵션 업데이트 (UI에는 Nano Banana 2와 Nano Banana Pro만 노출)
     const imageModelSelect = document.getElementById('imageModel');
     imageModelSelect.innerHTML = '';
     const advOpt = document.createElement('option');
@@ -71,10 +73,10 @@ async function loadModelConfig() {
     advOpt.textContent = modelConfig.advanced_model_alias;
     advOpt.selected = true;
     imageModelSelect.appendChild(advOpt);
-    const stdOpt = document.createElement('option');
-    stdOpt.value = modelConfig.standard_model;
-    stdOpt.textContent = modelConfig.standard_model_alias;
-    imageModelSelect.appendChild(stdOpt);
+    const proOpt = document.createElement('option');
+    proOpt.value = modelConfig.pro_model;
+    proOpt.textContent = modelConfig.pro_model_alias;
+    imageModelSelect.appendChild(proOpt);
 }
 
 // 로그 추가 함수
@@ -222,7 +224,7 @@ function updateMaxFiles() {
     const selectedModel = imageModel.value;
     
     if (operation === 'image-to-image') {
-        if (selectedModel === modelConfig.advanced_model) {
+        if (selectedModel === modelConfig.advanced_model || selectedModel === modelConfig.pro_model) {
             MAX_FILES = 14;
         } else {
             MAX_FILES = 3;
@@ -234,18 +236,72 @@ function updateMaxFiles() {
     }
 }
 
-// 모델에 따른 해상도 옵션 표시/숨김
+// 모델에 따른 해상도 옵션 표시/숨김 및 옵션 업데이트
 function updateResolutionVisibility() {
     const operation = operationType.value;
     const selectedModel = imageModel.value;
     
-    // text-to-image 또는 image-to-image이고, Nano-Banana Pro 모델인 경우에만 해상도 표시
+    // text-to-image 또는 image-to-image이고, Advanced 또는 Pro 모델인 경우 해상도 표시
     if ((operation === 'text-to-image' || operation === 'image-to-image') && 
-        selectedModel === modelConfig.advanced_model) {
+        (selectedModel === modelConfig.advanced_model || selectedModel === modelConfig.pro_model)) {
         imageResolutionGroup.style.display = 'block';
     } else {
         imageResolutionGroup.style.display = 'none';
     }
+    
+    // 해상도 옵션 동적 업데이트
+    const prevResolution = imageResolution.value;
+    imageResolution.innerHTML = '';
+    const isAdvanced = (selectedModel === modelConfig.advanced_model);
+    
+    const resolutions = isAdvanced
+        ? [{v:'0.5K',t:'0.5K'},{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}]
+        : [{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}];
+    const defaultRes = '2K';
+    
+    resolutions.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.v;
+        opt.textContent = r.t;
+        opt.selected = (prevResolution && resolutions.some(x => x.v === prevResolution))
+            ? r.v === prevResolution
+            : r.v === defaultRes;
+        imageResolution.appendChild(opt);
+    });
+    
+    // 비율 옵션 동적 업데이트
+    const prevRatio = aspectRatio.value;
+    aspectRatio.innerHTML = '';
+    
+    const baseRatios = [
+        {v:'1:1',t:'1:1'},{v:'2:3',t:'2:3'},{v:'3:2',t:'3:2'},
+        {v:'3:4',t:'3:4'},{v:'4:3',t:'4:3'},
+        {v:'9:16',t:'9:16'},{v:'16:9',t:'16:9'},{v:'21:9',t:'21:9'}
+    ];
+    const extraRatios = [
+        {v:'1:4',t:'1:4'},{v:'1:8',t:'1:8'},
+        {v:'4:1',t:'4:1'},{v:'8:1',t:'8:1'}
+    ];
+    
+    const allRatios = isAdvanced
+        ? [
+            {v:'1:1',t:'1:1'},{v:'1:4',t:'1:4'},{v:'1:8',t:'1:8'},
+            {v:'2:3',t:'2:3'},{v:'3:2',t:'3:2'},{v:'3:4',t:'3:4'},
+            {v:'4:1',t:'4:1'},{v:'4:3',t:'4:3'},{v:'8:1',t:'8:1'},
+            {v:'9:16',t:'9:16'},{v:'16:9',t:'16:9'},{v:'21:9',t:'21:9'}
+          ]
+        : baseRatios;
+    const defaultRatio = '9:16';
+    
+    allRatios.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.v;
+        opt.textContent = r.t;
+        opt.selected = (prevRatio && allRatios.some(x => x.v === prevRatio))
+            ? r.v === prevRatio
+            : r.v === defaultRatio;
+        aspectRatio.appendChild(opt);
+    });
 }
 
 // 작업 유형에 따른 UI 업데이트 함수
