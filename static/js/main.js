@@ -68,15 +68,15 @@ async function loadModelConfig() {
     // 셀렉트 옵션 업데이트 (UI에는 Nano Banana 2와 Nano Banana Pro만 노출)
     const imageModelSelect = document.getElementById('imageModel');
     imageModelSelect.innerHTML = '';
+    const stdOpt = document.createElement('option');
+    stdOpt.value = modelConfig.standard_model;
+    stdOpt.textContent = modelConfig.standard_model_alias;
+    stdOpt.selected = true;
+    imageModelSelect.appendChild(stdOpt);
     const advOpt = document.createElement('option');
     advOpt.value = modelConfig.advanced_model;
     advOpt.textContent = modelConfig.advanced_model_alias;
-    advOpt.selected = true;
     imageModelSelect.appendChild(advOpt);
-    const proOpt = document.createElement('option');
-    proOpt.value = modelConfig.pro_model;
-    proOpt.textContent = modelConfig.pro_model_alias;
-    imageModelSelect.appendChild(proOpt);
 }
 
 // 로그 추가 함수
@@ -221,14 +221,9 @@ function addFiles(files) {
 // MAX_FILES 업데이트 함수
 function updateMaxFiles() {
     const operation = operationType.value;
-    const selectedModel = imageModel.value;
     
     if (operation === 'image-to-image') {
-        if (selectedModel === modelConfig.advanced_model || selectedModel === modelConfig.pro_model) {
-            MAX_FILES = 14;
-        } else {
-            MAX_FILES = 3;
-        }
+        MAX_FILES = 14;
         fileInputCardTitle.innerHTML = `<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 ${MAX_FILES}장)`;
         log(`최대 파일 수 변경: ${MAX_FILES}장`);
     } else if (operation === 'image-to-video') {
@@ -239,12 +234,21 @@ function updateMaxFiles() {
 // 모델에 따른 해상도 옵션 표시/숨김 및 옵션 업데이트
 function updateResolutionVisibility() {
     const operation = operationType.value;
-    const selectedModel = imageModel.value;
     
-    // text-to-image 또는 image-to-image이고, Advanced 또는 Pro 모델인 경우 해상도 표시
-    if ((operation === 'text-to-image' || operation === 'image-to-image') && 
-        (selectedModel === modelConfig.advanced_model || selectedModel === modelConfig.pro_model)) {
+    // text-to-image 또는 image-to-image일 때 해상도 표시 (두 모델 모두 지원)
+    if (operation === 'text-to-image' || operation === 'image-to-image') {
         imageResolutionGroup.style.display = 'block';
+        // 0.5K는 Nano Banana 2 (standard)만 지원
+        const halfKOption = imageResolution.querySelector('option[value="0.5K"]');
+        if (halfKOption) {
+            const selectedModel = imageModel.value;
+            halfKOption.disabled = (selectedModel === modelConfig.advanced_model);
+            halfKOption.style.display = (selectedModel === modelConfig.advanced_model) ? 'none' : '';
+            // Pro 선택 시 0.5K가 선택되어 있으면 1K로 변경
+            if (selectedModel === modelConfig.advanced_model && imageResolution.value === '0.5K') {
+                imageResolution.value = '1K';
+            }
+        }
     } else {
         imageResolutionGroup.style.display = 'none';
     }
