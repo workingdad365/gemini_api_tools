@@ -46,12 +46,12 @@ let lastOperationType = null;
 
 // 모델 설정 (서버에서 로드)
 let modelConfig = {
-    standard_model: '',
-    pro_model: '',
-    advanced_model: '',
-    standard_model_alias: '',
-    pro_model_alias: '',
-    advanced_model_alias: ''
+    standard_model: 'gemini-3.1-flash-image-preview',
+    pro_model: 'gemini-3-pro-image-preview',
+    advanced_model: 'gemini-3-pro-image-preview',
+    standard_model_alias: 'Nano Banana 2',
+    pro_model_alias: 'Nano Banana Pro',
+    advanced_model_alias: 'Nano Banana Pro'
 };
 
 // 서버에서 모델 설정 로드
@@ -59,8 +59,8 @@ async function loadModelConfig() {
     try {
         const response = await fetch('/api/config');
         if (response.ok) {
-            modelConfig = await response.json();
-            log(`모델 설정 로드: ${modelConfig.advanced_model_alias}, ${modelConfig.pro_model_alias}`);
+            modelConfig = {...modelConfig, ...await response.json()};
+            log(`모델 설정 로드: ${modelConfig.standard_model_alias}, ${modelConfig.advanced_model_alias}`);
         }
     } catch (e) {
         log('모델 설정 로드 실패, 기본값 사용');
@@ -234,21 +234,11 @@ function updateMaxFiles() {
 // 모델에 따른 해상도 옵션 표시/숨김 및 옵션 업데이트
 function updateResolutionVisibility() {
     const operation = operationType.value;
+    const selectedModel = imageModel.value;
     
     // text-to-image 또는 image-to-image일 때 해상도 표시 (두 모델 모두 지원)
     if (operation === 'text-to-image' || operation === 'image-to-image') {
         imageResolutionGroup.style.display = 'block';
-        // 0.5K는 Nano Banana 2 (standard)만 지원
-        const halfKOption = imageResolution.querySelector('option[value="0.5K"]');
-        if (halfKOption) {
-            const selectedModel = imageModel.value;
-            halfKOption.disabled = (selectedModel === modelConfig.advanced_model);
-            halfKOption.style.display = (selectedModel === modelConfig.advanced_model) ? 'none' : '';
-            // Pro 선택 시 0.5K가 선택되어 있으면 1K로 변경
-            if (selectedModel === modelConfig.advanced_model && imageResolution.value === '0.5K') {
-                imageResolution.value = '1K';
-            }
-        }
     } else {
         imageResolutionGroup.style.display = 'none';
     }
@@ -259,8 +249,8 @@ function updateResolutionVisibility() {
     const isAdvanced = (selectedModel === modelConfig.advanced_model);
     
     const resolutions = isAdvanced
-        ? [{v:'0.5K',t:'0.5K'},{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}]
-        : [{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}];
+        ? [{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}]
+        : [{v:'0.5K',t:'0.5K'},{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}];
     const defaultRes = '2K';
     
     resolutions.forEach(r => {

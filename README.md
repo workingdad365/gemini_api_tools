@@ -65,7 +65,7 @@ tail -f server.log
 ### 방법 2: nohup 직접 사용
 
 ```bash
-cd webapp
+cd /path/to/gemini_api_tools
 nohup uv run app.py > server.log 2>&1 &
 echo $! > server.pid
 
@@ -110,7 +110,7 @@ sudo systemctl restart gemini-api-webapp
 ```bash
 # screen 사용
 screen -S gemini-webapp
-cd webapp
+cd /path/to/gemini_api_tools
 uv run app.py
 # Ctrl+A, D로 detach
 
@@ -119,7 +119,7 @@ screen -r gemini-webapp
 
 # tmux 사용
 tmux new -s gemini-webapp
-cd webapp
+cd /path/to/gemini_api_tools
 uv run app.py
 # Ctrl+B, D로 detach
 
@@ -211,13 +211,13 @@ start_server.bat
 
 ```bash
 # 실시간 로그 확인
-tail -f webapp/server.log
+tail -f server.log
 
 # 전체 로그 보기
-cat webapp/server.log
+cat server.log
 
 # 최근 100줄만 보기
-tail -n 100 webapp/server.log
+tail -n 100 server.log
 ```
 
 ### 헬스 체크
@@ -232,9 +232,9 @@ curl http://localhost:33000/health
 {
   "status": "healthy",
   "api_key_loaded": true,
-  "outputs_dir": "/path/to/webapp/outputs",
+   "outputs_dir": "/path/to/gemini_api_tools/outputs",
   "outputs_dir_exists": true,
-  "db_path": "/path/to/webapp/data.db",
+   "db_path": "/path/to/gemini_api_tools/data.db",
   "db_exists": true
 }
 ```
@@ -294,7 +294,7 @@ logging.basicConfig(
 - 대용량 파일 업로드 시 타임아웃이 발생할 수 있습니다
 - 외부 접속 시 방화벽에서 33000 포트를 열어야 합니다
 - HTTPS 설정은 별도로 리버스 프록시(nginx, Caddy 등)를 사용하세요
-- 웹앱은 독립적인 SQLite 데이터베이스(`webapp/data.db`)를 사용합니다
+- 웹앱은 독립적인 SQLite 데이터베이스(`data.db`)를 사용합니다
   - 데스크톱 GUI 버전의 프롬프트와 별도로 관리됩니다
 
 ## 보안

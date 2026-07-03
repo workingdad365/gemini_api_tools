@@ -5,14 +5,14 @@ After=network.target
 [Service]
 Type=simple
 User=YOUR_USERNAME
-WorkingDirectory=/path/to/gemini_api_tools/webapp
-Environment="PATH=/path/to/gemini_api_tools/webapp/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+WorkingDirectory=/path/to/gemini_api_tools
+Environment="PATH=/path/to/gemini_api_tools/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=/path/to/gemini_api_tools/.env
 ExecStart=/usr/local/bin/uv run app.py
 Restart=always
 RestartSec=10
-StandardOutput=append:/path/to/gemini_api_tools/webapp/server.log
-StandardError=append:/path/to/gemini_api_tools/webapp/server.log
+StandardOutput=append:/path/to/gemini_api_tools/server.log
+StandardError=append:/path/to/gemini_api_tools/server.log
 
 [Install]
 WantedBy=multi-user.target

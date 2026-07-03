@@ -44,13 +44,13 @@ BASE_DIR = Path(__file__).resolve().parent
 # 환경 변수 로드
 load_dotenv()
 
-# webapp 디렉토리의 .env 파일 로드
-webapp_env_path = BASE_DIR / ".env"
-if webapp_env_path.exists():
-    load_dotenv(webapp_env_path)
-    logger.info(f"Loaded .env from {webapp_env_path}")
+# 앱 루트의 .env 파일 로드
+app_env_path = BASE_DIR / ".env"
+if app_env_path.exists():
+    load_dotenv(app_env_path)
+    logger.info(f"Loaded .env from {app_env_path}")
 else:
-    logger.warning(f".env file not found at {webapp_env_path}")
+    logger.warning(f".env file not found at {app_env_path}")
 
 # 루트 디렉토리의 .env 파일도 로드 (fallback)
 root_env_path = BASE_DIR.parent / ".env"
