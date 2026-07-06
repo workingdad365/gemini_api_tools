@@ -46,10 +46,12 @@ let lastOperationType = null;
 
 // 모델 설정 (서버에서 로드)
 let modelConfig = {
-    standard_model: 'gemini-3.1-flash-image-preview',
-    pro_model: 'gemini-3-pro-image-preview',
-    advanced_model: 'gemini-3-pro-image-preview',
+    standard_model: 'gemini-3.1-flash-image',
+    lite_model: 'gemini-3.1-flash-lite-image',
+    pro_model: 'gemini-3-pro-image',
+    advanced_model: 'gemini-3-pro-image',
     standard_model_alias: 'Nano Banana 2',
+    lite_model_alias: 'Nano Banana 2 Lite',
     pro_model_alias: 'Nano Banana Pro',
     advanced_model_alias: 'Nano Banana Pro'
 };
@@ -65,7 +67,7 @@ async function loadModelConfig() {
     } catch (e) {
         log('모델 설정 로드 실패, 기본값 사용');
     }
-    // 셀렉트 옵션 업데이트 (UI에는 Nano Banana 2와 Nano Banana Pro만 노출)
+    // 셀렉트 옵션 업데이트 (UI에는 Nano Banana 2, Nano Banana 2 Lite, Nano Banana Pro 노출)
     const imageModelSelect = document.getElementById('imageModel');
     imageModelSelect.innerHTML = '';
     const stdOpt = document.createElement('option');
@@ -73,6 +75,10 @@ async function loadModelConfig() {
     stdOpt.textContent = modelConfig.standard_model_alias;
     stdOpt.selected = true;
     imageModelSelect.appendChild(stdOpt);
+    const liteOpt = document.createElement('option');
+    liteOpt.value = modelConfig.lite_model;
+    liteOpt.textContent = modelConfig.lite_model_alias;
+    imageModelSelect.appendChild(liteOpt);
     const advOpt = document.createElement('option');
     advOpt.value = modelConfig.advanced_model;
     advOpt.textContent = modelConfig.advanced_model_alias;
@@ -247,11 +253,15 @@ function updateResolutionVisibility() {
     const prevResolution = imageResolution.value;
     imageResolution.innerHTML = '';
     const isAdvanced = (selectedModel === modelConfig.advanced_model);
-    
-    const resolutions = isAdvanced
-        ? [{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}]
-        : [{v:'0.5K',t:'0.5K'},{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}];
-    const defaultRes = '2K';
+    const isLite = (selectedModel === modelConfig.lite_model);
+
+    // Nano Banana 2 Lite는 1K 해상도만 지원
+    const resolutions = isLite
+        ? [{v:'1K',t:'1K'}]
+        : isAdvanced
+            ? [{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}]
+            : [{v:'0.5K',t:'0.5K'},{v:'1K',t:'1K'},{v:'2K',t:'2K'},{v:'4K',t:'4K'}];
+    const defaultRes = isLite ? '1K' : '2K';
     
     resolutions.forEach(r => {
         const opt = document.createElement('option');

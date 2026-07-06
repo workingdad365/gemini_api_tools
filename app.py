@@ -104,14 +104,16 @@ logger.info("API keys loaded successfully")
 os.environ.pop("GOOGLE_API_KEY", None)
 os.environ.pop("GEMINI_API_KEY", None)
 
-# 모델 설정 (환경변수에서 로드)
-STANDARD_MODEL = os.getenv("STANDARD_MODEL", "gemini-3.1-flash-image-preview")
-ADVANCED_MODEL = os.getenv("ADVANCED_MODEL", "gemini-3-pro-image-preview")
-STANDARD_MODEL_ALIAS = os.getenv("STANDARD_MODEL_ALIAS", "Nano Banana 2")
-ADVANCED_MODEL_ALIAS = os.getenv("ADVANCED_MODEL_ALIAS", "Nano Banana Pro")
+# 모델 설정 (고정 값)
+STANDARD_MODEL = "gemini-3.1-flash-image"
+LITE_MODEL = "gemini-3.1-flash-lite-image"
+ADVANCED_MODEL = "gemini-3-pro-image"
+STANDARD_MODEL_ALIAS = "Nano Banana 2"
+LITE_MODEL_ALIAS = "Nano Banana 2 Lite"
+ADVANCED_MODEL_ALIAS = "Nano Banana Pro"
 PRO_MODEL = ADVANCED_MODEL
 PRO_MODEL_ALIAS = ADVANCED_MODEL_ALIAS
-logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
+logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), LITE: {LITE_MODEL} ({LITE_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
 
 def get_genai_client() -> genai.Client:
     """매 요청마다 랜덤 API 키를 선택하여 새 클라이언트 생성"""
@@ -617,9 +619,11 @@ async def get_config():
     """프론트엔드에 모델 설정 정보 제공"""
     return JSONResponse({
         "standard_model": STANDARD_MODEL,
+        "lite_model": LITE_MODEL,
         "pro_model": PRO_MODEL,
         "advanced_model": ADVANCED_MODEL,
         "standard_model_alias": STANDARD_MODEL_ALIAS,
+        "lite_model_alias": LITE_MODEL_ALIAS,
         "pro_model_alias": PRO_MODEL_ALIAS,
         "advanced_model_alias": ADVANCED_MODEL_ALIAS,
     })
