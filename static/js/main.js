@@ -1187,9 +1187,12 @@ loadModelConfig().then(() => {
 });
 loadGallery();
 
-// Bootstrap 툴팁 초기화
-const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-tooltipTriggerList.forEach(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+// Bootstrap 툴팁 초기화 (호버 가능한 데스크탑 환경에서만)
+// 터치 기기에서는 hover에 대응하는 mouseleave가 없어 툴팁이 사라지지 않으므로 비활성화한다.
+if (window.matchMedia('(hover: hover)').matches) {
+    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tooltipTriggerList.forEach(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+}
 
 log('웹 애플리케이션 준비 완료');
 
