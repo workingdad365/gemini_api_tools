@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Gemini API Tools</title>
+    <title>Gemini API Tools</title>
 
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -19,16 +19,39 @@
 <body>
     <nav class="navbar navbar-dark bg-dark shadow">
         <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1 text-gradient d-flex align-items-center">
-                <i class="bi bi-stars text-primary"></i> Google Gemini API Tools
-                <img src="/static/img/logo.png" alt="Logo" class="ms-2" style="height: 32px;">
-            </span>
+            <div class="d-flex align-items-center">
+                <button class="btn btn-outline-secondary btn-sm me-2" id="galleryToggleBtn" type="button"
+                    data-bs-toggle="tooltip" data-bs-placement="bottom" title="갤러리 보이기/숨기기">
+                    <i class="bi bi-images"></i>
+                </button>
+                <span class="navbar-brand mb-0 h1 text-gradient d-flex align-items-center">
+                    <i class="bi bi-stars text-primary"></i> Gemini API Tools
+                    <img src="/static/img/logo.png" alt="Logo" class="ms-2" style="height: 32px;">
+                </span>
+            </div>
             <a href="/logout" class="btn btn-danger btn-sm" data-bs-toggle="tooltip" data-bs-placement="bottom" title="로그아웃">
                 <i class="bi bi-box-arrow-right"></i>
             </a>
         </div>
     </nav>
 
+    <div id="appLayout">
+    <!-- 좌측 갤러리 사이드바 -->
+    <aside class="gallery-sidebar" id="gallerySidebar">
+        <div class="gallery-sidebar-header">
+            <span class="fw-bold"><i class="bi bi-images me-1"></i> 생성된 이미지</span>
+            <button class="btn btn-sm btn-outline-secondary" id="galleryCloseBtn" type="button" title="숨기기">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+        </div>
+        <div class="gallery-thumbs" id="galleryThumbs">
+            <div class="text-muted small text-center p-3" id="galleryEmpty">아직 생성된 이미지가 없습니다.</div>
+        </div>
+    </aside>
+    <!-- 모바일 오버레이 배경 -->
+    <div class="gallery-backdrop" id="galleryBackdrop"></div>
+
+    <div class="main-wrap">
     <div class="container py-3">
         <div class="row">
             <div class="col-lg-8 mx-auto">
@@ -241,6 +264,37 @@
                             <div class="text-muted">준비 완료</div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    </div><!-- /.main-wrap -->
+    </div><!-- /#appLayout -->
+
+    <!-- 원본 이미지 뷰어 모달 -->
+    <div class="modal fade" id="imageViewerModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-image me-2"></i> 이미지</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img src="" alt="원본 이미지" class="img-fluid rounded" id="viewerImage" style="max-height: 65vh;">
+                </div>
+                <div class="modal-footer justify-content-center flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary" id="viewerEditImageBtn">
+                        <i class="bi bi-pencil-square me-1"></i> 이미지 편집
+                    </button>
+                    <button type="button" class="btn btn-info text-white" id="viewerEditVideoBtn">
+                        <i class="bi bi-film me-1"></i> 비디오 편집
+                    </button>
+                    <button type="button" class="btn btn-danger" id="viewerDeleteBtn">
+                        <i class="bi bi-trash me-1"></i> 삭제
+                    </button>
+                    <a href="#" download class="btn btn-success" id="viewerDownloadBtn">
+                        <i class="bi bi-download me-1"></i> 다운로드
+                    </a>
                 </div>
             </div>
         </div>

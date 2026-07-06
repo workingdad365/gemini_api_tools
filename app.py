@@ -381,8 +381,42 @@ def generate_image_via_interaction(
 
     return interaction.id, image_bytes, mime_type, text
 
+# 썸네일 설정
+THUMBNAIL_SUFFIX = ".thumb"  # 썸네일 파일 접미사 (예: output_xxx.png -> output_xxx.png.thumb)
+THUMBNAIL_MAX_SIZE = 320  # 썸네일 최대 변(px)
+
+
+def create_thumbnail(original_path: Path, image_bytes: bytes) -> Optional[Path]:
+    """원본 이미지에 대한 축소 썸네일(PNG)을 생성하여 저장한다.
+
+    원본 파일명이 aaa.png이면 썸네일 파일명은 aaa.png.thumb가 되며, 내용은 PNG 포맷이다.
+    썸네일 생성이 실패해도 원본 저장 흐름에는 영향을 주지 않도록 예외를 흡수한다.
+
+    Args:
+        original_path: 원본 이미지 파일 경로.
+        image_bytes: 원본 이미지 바이트.
+
+    Returns:
+        생성된 썸네일 파일 경로. 실패 시 None.
+    """
+    thumb_path = original_path.with_name(original_path.name + THUMBNAIL_SUFFIX)
+    try:
+        with Image.open(BytesIO(image_bytes)) as img:
+            # 팔레트/투명 이미지는 RGBA로, 그 외는 RGB로 정규화
+            img = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")
+            img.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE))
+            img.save(thumb_path, format="PNG")
+        logger.info(f"Thumbnail created: {thumb_path.name}")
+        return thumb_path
+    except (OSError, ValueError) as exc:
+        logger.warning(f"Thumbnail creation failed for {original_path.name}: {exc}")
+        return None
+
+
 def save_output_image(image_bytes: bytes, mime_type: str) -> str:
     """생성된 이미지 바이트를 outputs 디렉토리에 저장하고 공개 URL 경로를 반환한다.
+
+    원본 저장 후 사이드 갤러리 표시용 썸네일(PNG)을 자동으로 함께 생성한다.
 
     Args:
         image_bytes: 저장할 이미지 원본 바이트.
@@ -394,8 +428,11 @@ def save_output_image(image_bytes: bytes, mime_type: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     extension = mimetypes.guess_extension(mime_type) or ".png"
     output_filename = f"output_{timestamp}{extension}"
-    (OUTPUTS_DIR / output_filename).write_bytes(image_bytes)
+    output_path = OUTPUTS_DIR / output_filename
+    output_path.write_bytes(image_bytes)
     logger.info(f"Image saved successfully: {output_filename}")
+    # 새로 생성되는 이미지에 대해서만 썸네일 생성 (기존 이미지는 백필하지 않음)
+    create_thumbnail(output_path, image_bytes)
     return f"/outputs/{output_filename}"
 
 def get_client_ip(request: Request) -> str:
@@ -709,6 +746,85 @@ async def get_config():
         "pro_model_alias": PRO_MODEL_ALIAS,
         "advanced_model_alias": ADVANCED_MODEL_ALIAS,
     })
+
+# 출력 이미지 갤러리 API
+@app.get("/api/gallery")
+async def get_gallery():
+    """썸네일이 존재하는 출력 이미지 목록을 최신순으로 반환한다.
+
+    썸네일(.thumb)이 있는 파일만 대상으로 하므로, 썸네일 도입 이전에 생성된
+    과거 이미지는 목록에 포함되지 않는다.
+
+    Returns:
+        {"images": [{filename, thumb_url, original_url, mtime}, ...]} 형태의 JSON.
+        mtime 내림차순(최신이 먼저)으로 정렬된다.
+    """
+    images = []
+    for thumb_path in OUTPUTS_DIR.glob(f"*{THUMBNAIL_SUFFIX}"):
+        # 썸네일명 output_xxx.png.thumb -> 원본명 output_xxx.png
+        original_path = thumb_path.with_suffix("")
+        if not original_path.exists():
+            continue
+        images.append({
+            "filename": original_path.name,
+            "thumb_url": f"/api/thumbnail/{thumb_path.name}",
+            "original_url": f"/outputs/{original_path.name}",
+            "mtime": original_path.stat().st_mtime,
+        })
+    images.sort(key=lambda item: item["mtime"], reverse=True)
+    return JSONResponse({"images": images})
+
+
+def _resolve_output_path(filename: str) -> Path:
+    """outputs 디렉토리 내부 파일 경로를 안전하게 해석한다(경로 순회 방지).
+
+    Args:
+        filename: 파일명(디렉토리 구분자 미포함 가정).
+
+    Returns:
+        검증된 절대 경로.
+
+    Raises:
+        HTTPException: 경로가 outputs 디렉토리를 벗어나는 경우(400).
+    """
+    outputs_root = OUTPUTS_DIR.resolve()
+    target = (OUTPUTS_DIR / filename).resolve()
+    if outputs_root not in target.parents and target != outputs_root:
+        logger.warning(f"Path traversal attempt blocked: {filename}")
+        raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+    return target
+
+
+@app.get("/api/thumbnail/{filename}")
+async def get_thumbnail(filename: str):
+    """썸네일 파일(.thumb, PNG 내용)을 image/png 타입으로 반환한다."""
+    thumb_path = _resolve_output_path(filename)
+    if not thumb_path.exists() or not thumb_path.name.endswith(THUMBNAIL_SUFFIX):
+        raise HTTPException(status_code=404, detail="썸네일을 찾을 수 없습니다.")
+    return FileResponse(thumb_path, media_type="image/png")
+
+
+@app.delete("/api/outputs/{filename}")
+async def delete_output(filename: str):
+    """출력 이미지 원본과 해당 썸네일을 함께 삭제한다."""
+    original_path = _resolve_output_path(filename)
+    thumb_path = original_path.with_name(original_path.name + THUMBNAIL_SUFFIX)
+
+    deleted_any = False
+    if original_path.exists():
+        original_path.unlink()
+        deleted_any = True
+        logger.info(f"Deleted output image: {original_path.name}")
+    if thumb_path.exists():
+        thumb_path.unlink()
+        deleted_any = True
+        logger.info(f"Deleted thumbnail: {thumb_path.name}")
+
+    if not deleted_any:
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.")
+
+    return JSONResponse({"status": "success", "message": "이미지가 삭제되었습니다."})
+
 
 @app.post("/api/text-to-image")
 async def text_to_image(

@@ -35,6 +35,23 @@ const newSessionBtn = document.getElementById('newSessionBtn');
 const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
 const settingsBody = document.getElementById('settingsBody');
 
+// 갤러리 관련 DOM 요소
+const appLayout = document.getElementById('appLayout');
+const galleryToggleBtn = document.getElementById('galleryToggleBtn');
+const galleryCloseBtn = document.getElementById('galleryCloseBtn');
+const galleryBackdrop = document.getElementById('galleryBackdrop');
+const galleryThumbs = document.getElementById('galleryThumbs');
+const galleryEmpty = document.getElementById('galleryEmpty');
+const imageViewerModal = new bootstrap.Modal(document.getElementById('imageViewerModal'));
+const viewerImage = document.getElementById('viewerImage');
+const viewerEditImageBtn = document.getElementById('viewerEditImageBtn');
+const viewerEditVideoBtn = document.getElementById('viewerEditVideoBtn');
+const viewerDeleteBtn = document.getElementById('viewerDeleteBtn');
+const viewerDownloadBtn = document.getElementById('viewerDownloadBtn');
+
+// 현재 뷰어에 표시 중인 이미지 정보
+let currentViewerImage = null;
+
 let selectedFiles = [];
 let currentPromptId = null;
 let MAX_FILES = 3;
@@ -478,6 +495,11 @@ async function executeOperation(isNew = false) {
             }
             log('작업 완료');
             displayResult(result, operation);
+
+            // 이미지가 생성된 경우 갤러리 갱신
+            if ((operation === 'text-to-image' || operation === 'image-to-image') && result.output_file) {
+                loadGallery();
+            }
         } else {
             throw new Error('작업 실패');
         }
@@ -1023,10 +1045,147 @@ loadPromptBtn.addEventListener('click', async () => {
     }
 });
 
+// ===== 갤러리 (생성 이미지 사이드바) =====
+
+// 갤러리 표시/숨김 토글
+function toggleGallery() {
+    appLayout.classList.toggle('collapsed');
+}
+
+// 데스크탑 여부 확인
+function isDesktopViewport() {
+    return window.matchMedia('(min-width: 992px)').matches;
+}
+
+// 뷰포트에 따른 초기 표시 상태 설정 (데스크탑: 표시, 모바일: 숨김)
+function initGalleryVisibility() {
+    if (isDesktopViewport()) {
+        appLayout.classList.remove('collapsed');
+    } else {
+        appLayout.classList.add('collapsed');
+    }
+}
+
+// 갤러리 목록 로드 및 렌더링
+async function loadGallery() {
+    try {
+        const response = await fetch('/api/gallery');
+        if (!response.ok) {
+            return;
+        }
+        const data = await response.json();
+        renderGallery(data.images || []);
+    } catch (error) {
+        log('갤러리 로드 실패');
+    }
+}
+
+// 썸네일 렌더링
+function renderGallery(images) {
+    galleryThumbs.innerHTML = '';
+
+    if (!images || images.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'text-muted small text-center p-3';
+        empty.textContent = '아직 생성된 이미지가 없습니다.';
+        galleryThumbs.appendChild(empty);
+        return;
+    }
+
+    images.forEach(img => {
+        const item = document.createElement('div');
+        item.className = 'gallery-thumb-item';
+        item.innerHTML = `<img src="${img.thumb_url}" alt="${img.filename}" loading="lazy">`;
+        item.addEventListener('click', () => openImageViewer(img));
+        galleryThumbs.appendChild(item);
+    });
+}
+
+// 이미지 뷰어 모달 열기
+function openImageViewer(img) {
+    currentViewerImage = img;
+    viewerImage.src = img.original_url;
+    viewerDownloadBtn.href = img.original_url;
+    viewerDownloadBtn.setAttribute('download', img.filename);
+    imageViewerModal.show();
+}
+
+// 편집: 지정한 작업 모드로 전환하고 원본을 base 이미지로 로드
+// targetOperation: 'image-to-image'(이미지 편집) 또는 'image-to-video'(비디오 편집)
+async function editViewerImage(targetOperation) {
+    if (!currentViewerImage) {
+        return;
+    }
+    const { original_url, filename } = currentViewerImage;
+    try {
+        const response = await fetch(original_url);
+        const blob = await response.blob();
+        const file = new File([blob], filename, { type: blob.type || 'image/png' });
+
+        // 대상 작업 모드로 전환 (updateUIForOperation이 selectedFiles/세션 초기화 수행)
+        operationType.value = targetOperation;
+        updateUIForOperation();
+
+        // 전환 후 base 이미지 세팅
+        selectedFiles = [file];
+        updateImagePreview();
+
+        // 이미지 편집인 경우 새 편집 세션 시작
+        if (targetOperation === 'image-to-image') {
+            lastImageSessionId = null;
+            updateSessionUI();
+        }
+
+        imageViewerModal.hide();
+        const modeLabel = targetOperation === 'image-to-video' ? '비디오' : '이미지';
+        log(`${modeLabel} 편집용 base 이미지 로드됨: ${filename}`);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (error) {
+        logError(`편집용 이미지 로드 실패: ${error.message}`);
+        alert('편집용 이미지를 불러오지 못했습니다.');
+    }
+}
+
+// 삭제: 원본 + 썸네일 삭제
+async function deleteViewerImage() {
+    if (!currentViewerImage) {
+        return;
+    }
+    if (!confirm('이 이미지를 삭제하시겠습니까?')) {
+        return;
+    }
+    const { filename } = currentViewerImage;
+    try {
+        const response = await fetch(`/api/outputs/${encodeURIComponent(filename)}`, {
+            method: 'DELETE'
+        });
+        if (!response.ok) {
+            throw new Error('삭제 실패');
+        }
+        imageViewerModal.hide();
+        log(`이미지 삭제됨: ${filename}`);
+        currentViewerImage = null;
+        await loadGallery();
+    } catch (error) {
+        logError(`이미지 삭제 실패: ${error.message}`);
+        alert('이미지 삭제 중 오류가 발생했습니다.');
+    }
+}
+
+// 갤러리 이벤트 바인딩
+galleryToggleBtn.addEventListener('click', toggleGallery);
+galleryCloseBtn.addEventListener('click', toggleGallery);
+galleryBackdrop.addEventListener('click', toggleGallery);
+viewerEditImageBtn.addEventListener('click', () => editViewerImage('image-to-image'));
+viewerEditVideoBtn.addEventListener('click', () => editViewerImage('image-to-video'));
+viewerDeleteBtn.addEventListener('click', deleteViewerImage);
+
 // 초기화
+initGalleryVisibility();
 loadModelConfig().then(() => {
     updateUIForOperation();
 });
+loadGallery();
 
 // Bootstrap 툴팁 초기화
 const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
