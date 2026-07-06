@@ -1,6 +1,5 @@
 import os
 import time
-import base64
 import sqlite3
 import mimetypes
 import struct
@@ -269,134 +268,53 @@ def parse_audio_mime_type(mime_type: str) -> dict:
     
     return {"bits_per_sample": bits_per_sample, "rate": rate}
 
-async def read_upload_images(files: list[UploadFile]) -> list[tuple[bytes, str]]:
-    """업로드된 이미지 파일들을 (바이트, MIME) 튜플 리스트로 읽어 반환한다.
+def build_image_config(aspect_ratio: Optional[str] = None, resolution: Optional[str] = None) -> types.ImageConfig:
+    """이미지 설정 생성"""
+    def prune(values: dict) -> dict:
+        return {key: value for key, value in values.items() if value}
 
-    디스크에 저장하지 않고 메모리로만 읽어 Interactions API 입력으로 사용한다.
+    candidates = [
+        prune({"aspect_ratio": aspect_ratio, "image_size": resolution}),
+        prune({"aspectRatio": aspect_ratio, "imageSize": resolution}),
+    ]
 
-    Args:
-        files: FastAPI UploadFile 리스트.
-
-    Returns:
-        (원본 바이트, MIME 타입) 튜플의 리스트.
-    """
-    result: list[tuple[bytes, str]] = []
-    for file in files:
-        data = await file.read()
-        mime_type = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "image/png"
-        result.append((data, mime_type))
-    return result
-
-def generate_image_via_interaction(
-    client: genai.Client,
-    model: str,
-    prompt: str,
-    previous_interaction_id: Optional[str] = None,
-    input_images: Optional[list[tuple[bytes, str]]] = None,
-    aspect_ratio: Optional[str] = None,
-    resolution: Optional[str] = None,
-) -> tuple[Optional[str], Optional[bytes], str, str]:
-    """Interactions API로 이미지를 생성 또는 편집하고 결과를 반환한다.
-
-    기존 generateContent + 수동 대화기록 관리 대신, 서버 사이드 상태(previous_interaction_id)를
-    사용하여 멀티턴을 처리한다. 이전 이미지 바이트를 직접 재전송할 필요가 없다.
-
-    Args:
-        client: GenAI 클라이언트.
-        model: 이미지 모델 이름.
-        prompt: 사용자 프롬프트.
-        previous_interaction_id: 이어갈 이전 interaction ID. 없으면 새 대화 시작.
-        input_images: 입력 이미지 (바이트, MIME) 리스트. image-to-image 신규 생성 시 사용.
-        aspect_ratio: 이미지 비율(예: "16:9"). text-to-image에서만 사용.
-        resolution: 해상도. "0.5K"는 API 규격상 "512"로 매핑되며, 그 외("1K"/"2K"/"4K")는 그대로 전달.
-
-    Returns:
-        (interaction_id, image_bytes, mime_type, text) 튜플.
-        image_bytes는 이미지가 없으면 None(텍스트 전용 응답).
-    """
-    # 입력 구성: 이미지(선택) + 텍스트
-    input_items: list[dict] = []
-    if input_images:
-        for img_bytes, img_mime in input_images:
-            input_items.append({
-                "type": "image",
-                "data": base64.b64encode(img_bytes).decode("utf-8"),
-                "mime_type": img_mime,
-            })
-    input_items.append({"type": "text", "text": prompt})
-
-    # 이미지 config (해상도/비율) - 신규 생성 턴에서만 사용
-    image_config: dict = {}
-    if aspect_ratio:
-        image_config["aspect_ratio"] = aspect_ratio
-    if resolution:
-        image_config["image_size"] = "512" if resolution == "0.5K" else resolution
-
-    body: dict = {
-        "model": model,
-        "input": input_items,
-        "response_modalities": ["text", "image"],
-        # 서버 사이드 상태 지속 저장 (멀티턴 편집 시 previous_interaction_id 참조 보장).
-        "store": True,
-    }
-    if previous_interaction_id:
-        # 편집(이어가기) 호출에는 generation_config/image_config를 재전송하지 않는다.
-        # 재전송하면 지연 후 서버가 404("Requested entity was not found")를 반환한다(검증 완료).
-        # 비율/해상도는 원본 interaction의 컨텍스트를 그대로 상속한다.
-        body["previous_interaction_id"] = previous_interaction_id
-    elif image_config:
-        body["generation_config"] = {"image_config": image_config}
-
-    # 편집(이어가기) 턴은 preview 단계 Interactions API에서 간헐적으로
-    # thought_signature(400) 또는 not_found(404) 오류가 발생할 수 있어 짧은 백오프로 재시도한다.
-    # (문서상 stateful 모드에선 서버가 signature를 관리하나 preview라 이따금 실패함)
-    is_continuation = previous_interaction_id is not None
-    max_attempts = 3 if is_continuation else 1
-    interaction = None
-    for attempt in range(max_attempts):
+    for candidate in candidates:
+        if not candidate:
+            continue
         try:
-            interaction = client.interactions.create(**body)
-            break
-        except Exception as exc:
-            message = str(exc)
-            transient = ("thought_signature" in message) or ("not found" in message.lower())
-            if is_continuation and transient and attempt < max_attempts - 1:
-                logger.warning(
-                    f"Transient interaction error on edit turn "
-                    f"(attempt {attempt + 1}/{max_attempts}), retrying: {message[:120]}"
-                )
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            raise
+            return types.ImageConfig(**candidate)
+        except Exception:
+            continue
 
-    # 출력 파싱
-    text = interaction.output_text or ""
-    image_bytes: Optional[bytes] = None
-    mime_type = "image/png"
-    out_img = getattr(interaction, "output_image", None)
-    if out_img and out_img.data:
-        data = out_img.data
-        image_bytes = data if isinstance(data, bytes) else base64.b64decode(data)
-        mime_type = out_img.mime_type or "image/jpeg"
+    if not any(candidates):
+        return types.ImageConfig()
 
-    return interaction.id, image_bytes, mime_type, text
+    logger.warning("ImageConfig does not support image size or aspect ratio on this SDK version")
+    return types.ImageConfig()
 
-def save_output_image(image_bytes: bytes, mime_type: str) -> str:
-    """생성된 이미지 바이트를 outputs 디렉토리에 저장하고 공개 URL 경로를 반환한다.
+def build_user_parts_for_images(upload_paths: list[Path], prompt: str) -> list[types.Part]:
+    """이미지와 프롬프트로 사용자 파트 생성"""
+    parts = []
+    for upload_path in upload_paths:
+        pil_image = Image.open(upload_path)
+        mime_type = mimetypes.guess_type(upload_path)[0] or "image/png"
+        img_format = mime_type.split('/')[-1].upper()
+        if img_format == 'JPG':
+            img_format = 'JPEG'
+        image_bytes = pil_to_bytes(pil_image, image_format=img_format)
+        parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
+    parts.append(types.Part.from_text(text=prompt))
+    return parts
 
-    Args:
-        image_bytes: 저장할 이미지 원본 바이트.
-        mime_type: 이미지 MIME 타입(확장자 결정에 사용).
-
-    Returns:
-        "/outputs/<파일명>" 형태의 URL 경로.
-    """
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    extension = mimetypes.guess_extension(mime_type) or ".png"
-    output_filename = f"output_{timestamp}{extension}"
-    (OUTPUTS_DIR / output_filename).write_bytes(image_bytes)
-    logger.info(f"Image saved successfully: {output_filename}")
-    return f"/outputs/{output_filename}"
+def build_user_content_with_image(image_bytes: bytes, mime_type: str, prompt: str) -> types.Content:
+    """저장된 이미지와 프롬프트로 사용자 입력 Content를 생성한다."""
+    return types.Content(
+        role="user",
+        parts=[
+            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            types.Part.from_text(text=prompt),
+        ],
+    )
 
 def get_client_ip(request: Request) -> str:
     """클라이언트 IP 주소 추출"""
@@ -710,6 +628,36 @@ async def get_config():
         "advanced_model_alias": ADVANCED_MODEL_ALIAS,
     })
 
+def store_image_chat_turn(
+    session_id: str,
+    _history: list,
+    user_content: types.Content,
+    _source_content: types.Content,
+    image_bytes: bytes,
+    mime_type: str,
+    client: genai.Client,
+    model: str,
+) -> None:
+    """이미지 생성 세션의 대화 기록에 이번 턴(사용자 입력 + 모델 응답)을 추가한다.
+
+    Args:
+        session_id: 대상 세션 식별자(UUID).
+        _history: 이전 구현과의 호출 호환성을 위한 값.
+        user_content: 이번 턴의 사용자 입력 Content.
+        _source_content: 이전 구현과의 호출 호환성을 위한 값.
+        image_bytes: 이번 턴에서 생성된 이미지의 원본 바이트.
+        mime_type: 생성 이미지 MIME 타입.
+        client: 현재 요청에서 사용한 GenAI 클라이언트.
+        model: 사용한 모델 이름.
+    """
+    image_chat_sessions[session_id] = {
+        "history": [user_content],
+        "last_image_bytes": image_bytes,
+        "last_image_mime_type": mime_type,
+        "client": client,
+        "model": model,
+    }
+
 @app.post("/api/text-to-image")
 async def text_to_image(
     prompt: str = Form(...),
@@ -719,57 +667,123 @@ async def text_to_image(
     is_new: bool = Form(True),
     session_id: Optional[str] = Form(None)
 ):
-    """Text to Image 작업 (Interactions API 기반 Multi-turn 지원)"""
+    """Text to Image 작업 (Multi-turn 지원)"""
     try:
         if model is None:
             model = STANDARD_MODEL
         logger.info(f"Text to Image request - prompt length: {len(prompt)}, aspect_ratio: {aspect_ratio}, model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
         logger.info(f"Text to Image prompt: {prompt}")
-
+        
         client = get_genai_client()
-
-        # Multi-turn 모드: 이전 interaction ID를 이어받아 서버 사이드 상태로 편집
-        previous_interaction_id: Optional[str] = None
-        continue_session = not is_new and session_id and session_id in image_chat_sessions
-        if continue_session:
-            previous_interaction_id = image_chat_sessions[session_id].get("interaction_id")
-            if not previous_interaction_id:
-                raise HTTPException(status_code=400, detail="편집할 이전 세션 정보가 없습니다.")
-            logger.info(f"Continuing interaction: {previous_interaction_id} (session: {session_id})")
-
-        logger.info("Calling Interactions API...")
-        interaction_id, image_bytes, mime_type, text_response = generate_image_via_interaction(
-            client,
-            model,
-            prompt,
-            previous_interaction_id=previous_interaction_id,
-            aspect_ratio=aspect_ratio,
-            resolution=resolution,
+        current_session_id = session_id
+        
+        # generate_content용 config (response_modalities + image_config)
+        generation_config = types.GenerateContentConfig(
+            safety_settings=SAFETY_SETTINGS,
+            response_modalities=["TEXT", "IMAGE"],
+            image_config=build_image_config(aspect_ratio=aspect_ratio, resolution=resolution),
         )
-
-        # 세션 ID 결정 (이어가기면 기존 유지, 아니면 신규 발급)
-        current_session_id = session_id if continue_session else str(uuid.uuid4())
-        if not continue_session:
+        
+        logger.info("Calling Gemini API...")
+        text_response = ""  # 텍스트 응답 누적
+        
+        # Multi-turn 모드: 마지막 출력 이미지를 새 사용자 입력 이미지로 사용
+        if not is_new and session_id and session_id in image_chat_sessions:
+            session_state = image_chat_sessions[session_id]
+            image_bytes = session_state.get("last_image_bytes")
+            image_mime_type = session_state.get("last_image_mime_type", "image/png")
+            if not image_bytes:
+                raise HTTPException(status_code=400, detail="편집할 이전 이미지가 세션에 없습니다.")
+            user_content = build_user_content_with_image(image_bytes, image_mime_type, prompt)
+            session_history = []
+            contents = [user_content]
+            logger.info(f"Using previous generated image for editing: {session_id}")
+        else:
+            # 새 세션 시작
+            user_content = types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=prompt)],
+            )
+            session_history = []
+            contents = [user_content]
+            current_session_id = str(uuid.uuid4())
             logger.info(f"Created new chat session: {current_session_id}")
+        
+        # 생성 (chat 객체 대신 대화 기록을 직접 전달)
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=generation_config,
+        )
+        
+        # 응답 처리
+        if response is None or response.parts is None:
+            logger.error("Empty response parts from Gemini API")
+            raise HTTPException(status_code=500, detail="응답 데이터 없음")
 
-        # 다음 턴을 위해 최신 interaction ID 저장
-        image_chat_sessions[current_session_id] = {
-            "interaction_id": interaction_id,
-            "model": model,
-        }
-
-        if image_bytes:
-            output_file = save_output_image(image_bytes, mime_type)
-            response_data = {
-                "status": "success",
-                "message": "이미지가 생성되었습니다.",
-                "output_file": output_file,
-                "session_id": current_session_id,
-            }
-            if text_response:
-                response_data["llm_response"] = text_response
-            return JSONResponse(response_data)
-
+        for part in response.parts:
+            if part.text is not None:
+                text_response += part.text
+                logger.info(f"Received text response: {part.text}")
+            # as_image() 방식 우선 시도
+            if hasattr(part, 'as_image'):
+                image = part.as_image()
+                if image:
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    output_filename = f"output_{timestamp}.png"
+                    output_path = OUTPUTS_DIR / output_filename
+                    image.save(str(output_path))
+                    
+                    logger.info(f"Image saved successfully: {output_filename}")
+                    # 다음 턴을 위해 대화 기록 갱신 (inline bytes + thought_signature 보존)
+                    store_image_chat_turn(
+                        current_session_id, session_history, user_content,
+                        response.candidates[0].content,
+                        pil_to_bytes(image, image_format="PNG"), "image/png",
+                        client, model,
+                    )
+                    response_data = {
+                        "status": "success",
+                        "message": "이미지가 생성되었습니다.",
+                        "output_file": f"/outputs/{output_filename}",
+                        "session_id": current_session_id
+                    }
+                    if text_response:
+                        response_data["llm_response"] = text_response
+                    
+                    return JSONResponse(response_data)
+            # inline_data 방식도 지원
+            elif hasattr(part, 'inline_data') and part.inline_data is not None and part.inline_data.data:
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                inline_data = part.inline_data
+                data_buffer = inline_data.data
+                file_extension = mimetypes.guess_extension(inline_data.mime_type)
+                
+                output_filename = f"output_{timestamp}{file_extension}"
+                output_path = OUTPUTS_DIR / output_filename
+                
+                with open(output_path, "wb") as f:
+                    f.write(data_buffer)
+                
+                logger.info(f"Image saved successfully: {output_filename}")
+                # 다음 턴을 위해 대화 기록 갱신 (inline bytes + thought_signature 보존)
+                store_image_chat_turn(
+                    current_session_id, session_history, user_content,
+                    response.candidates[0].content,
+                    data_buffer, inline_data.mime_type,
+                    client, model,
+                )
+                response_data = {
+                    "status": "success",
+                    "message": "이미지가 생성되었습니다.",
+                    "output_file": f"/outputs/{output_filename}",
+                    "session_id": current_session_id
+                }
+                if text_response:
+                    response_data["llm_response"] = text_response
+                
+                return JSONResponse(response_data)
+        
         # 이미지가 없지만 텍스트 응답이 있는 경우 (콘티, 설명 등)
         if text_response:
             logger.info("No image generated, but text response received")
@@ -778,14 +792,12 @@ async def text_to_image(
                 "message": "텍스트 응답을 받았습니다.",
                 "text_only": True,
                 "llm_response": text_response,
-                "session_id": current_session_id,
+                "session_id": current_session_id
             })
-
+        
         logger.error("No image or text data received from API")
         raise HTTPException(status_code=500, detail="응답 데이터 없음")
-
-    except HTTPException:
-        raise
+    
     except Exception as e:
         logger.error(f"Text to Image error: {str(e)}")
         logger.error(traceback.format_exc())
@@ -800,69 +812,141 @@ async def image_to_image(
     is_new: bool = Form(True),
     session_id: Optional[str] = Form(None)
 ):
-    """Image to Image 작업 (Interactions API 기반, 멀티 이미지 및 Multi-turn 지원)"""
+    """Image to Image 작업 (멀티 이미지 지원, Multi-turn 지원)"""
+    upload_paths = []
     try:
         if model is None:
             model = STANDARD_MODEL
         logger.info(f"Image to Image request - model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
         logger.info(f"Image to Image prompt: {prompt}")
-
+        
         client = get_genai_client()
-
-        previous_interaction_id: Optional[str] = None
-        input_images: Optional[list[tuple[bytes, str]]] = None
-        continue_session = not is_new and session_id and session_id in image_chat_sessions
-
-        if continue_session:
-            # Multi-turn 편집: 서버 사이드 상태를 이어받음 (이전 이미지 재전송 불필요)
-            previous_interaction_id = image_chat_sessions[session_id].get("interaction_id")
-            if not previous_interaction_id:
-                raise HTTPException(status_code=400, detail="편집할 이전 세션 정보가 없습니다.")
-            # 편집 중 추가 참조 이미지를 올린 경우 함께 전달
-            if files:
-                input_images = await read_upload_images(files[:14])
-            logger.info(f"Continuing image interaction: {previous_interaction_id} (session: {session_id})")
+        current_session_id = session_id
+        text_response = ""  # 텍스트 응답 누적
+        
+        # generate_content용 config (response_modalities + image_config)
+        generation_config = types.GenerateContentConfig(
+            safety_settings=SAFETY_SETTINGS,
+            response_modalities=["TEXT", "IMAGE"],
+            image_config=build_image_config(resolution=resolution),
+        )
+        
+        # Multi-turn 모드: 마지막 출력 이미지를 새 사용자 입력 이미지로 사용
+        if not is_new and session_id and session_id in image_chat_sessions:
+            session_state = image_chat_sessions[session_id]
+            image_bytes = session_state.get("last_image_bytes")
+            image_mime_type = session_state.get("last_image_mime_type", "image/png")
+            if not image_bytes:
+                raise HTTPException(status_code=400, detail="편집할 이전 이미지가 세션에 없습니다.")
+            user_content = build_user_content_with_image(image_bytes, image_mime_type, prompt)
+            session_history = []
+            contents = [user_content]
+            logger.info(f"Using previous generated image for image editing: {session_id}")
+        
+        # 새 세션 생성 모드: 이미지와 프롬프트 함께 전송
         else:
-            # 새 세션: 업로드 이미지 + 프롬프트로 생성
             if not files:
                 raise HTTPException(status_code=400, detail="새로 만들기 모드에서는 이미지 파일이 필요합니다.")
+            
             # 두 모델 모두 최대 14장 이미지 참조 지원
-            files_to_process = files[:14]
+            max_files = 14
+            files_to_process = files[:max_files]
             logger.info(f"Processing {len(files_to_process)} images for image-to-image with model {model}")
-            input_images = await read_upload_images(files_to_process)
-
-        logger.info("Calling Interactions API...")
-        interaction_id, image_bytes, mime_type, text_response = generate_image_via_interaction(
-            client,
-            model,
-            prompt,
-            previous_interaction_id=previous_interaction_id,
-            input_images=input_images,
-            resolution=resolution,
-        )
-
-        current_session_id = session_id if continue_session else str(uuid.uuid4())
-        if not continue_session:
+            
+            # 파일 저장
+            for file in files_to_process:
+                upload_path = UPLOADS_DIR / file.filename
+                with open(upload_path, "wb") as buffer:
+                    buffer.write(await file.read())
+                upload_paths.append(upload_path)
+            
+            # 입력 이미지 + 프롬프트로 사용자 파트 구성 (history와 요청에 동일하게 사용)
+            user_content = types.Content(
+                role="user",
+                parts=build_user_parts_for_images(upload_paths, prompt),
+            )
+            session_history = []
+            contents = [user_content]
+            current_session_id = str(uuid.uuid4())
             logger.info(f"Created new chat session for image-to-image: {current_session_id}")
+            
+            # 업로드된 파일 삭제 (바이트는 user_content에 이미 포함됨)
+            for upload_path in upload_paths:
+                if upload_path.exists():
+                    upload_path.unlink()
+            upload_paths = []
+        
+        # 생성 (chat 객체 대신 대화 기록을 직접 전달)
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=generation_config,
+        )
+        
+        # 응답 처리 (공통)
+        if response is None or response.parts is None:
+            logger.error("Empty response parts from Gemini API")
+            raise HTTPException(status_code=500, detail="응답 데이터 없음")
 
-        # 다음 턴을 위해 최신 interaction ID 저장
-        image_chat_sessions[current_session_id] = {
-            "interaction_id": interaction_id,
-            "model": model,
-        }
-
-        if image_bytes:
-            output_file = save_output_image(image_bytes, mime_type)
-            response_data = {
-                "status": "success",
-                "message": "이미지가 생성되었습니다.",
-                "output_file": output_file,
-                "session_id": current_session_id,
-            }
-            if text_response:
-                response_data["llm_response"] = text_response
-            return JSONResponse(response_data)
-
+        for part in response.parts:
+            if part.text is not None:
+                text_response += part.text
+                logger.info(f"Received text response: {part.text}")
+            # as_image() 방식 우선 시도
+            if hasattr(part, 'as_image'):
+                image = part.as_image()
+                if image:
+                    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    output_filename = f"output_{timestamp}.png"
+                    output_path = OUTPUTS_DIR / output_filename
+                    image.save(str(output_path))
+                    
+                    # 다음 턴을 위해 대화 기록 갱신 (inline bytes + thought_signature 보존)
+                    store_image_chat_turn(
+                        current_session_id, session_history, user_content,
+                        response.candidates[0].content,
+                        pil_to_bytes(image, image_format="PNG"), "image/png",
+                        client, model,
+                    )
+                    response_data = {
+                        "status": "success",
+                        "message": "이미지가 생성되었습니다.",
+                        "output_file": f"/outputs/{output_filename}",
+                        "session_id": current_session_id
+                    }
+                    if text_response:
+                        response_data["llm_response"] = text_response
+                    
+                    return JSONResponse(response_data)
+            # inline_data 방식도 지원
+            elif hasattr(part, 'inline_data') and part.inline_data is not None and part.inline_data.data:
+                image_data = BytesIO(part.inline_data.data)
+                img = Image.open(image_data)
+                
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                output_filename = f"output_{timestamp}.png"
+                output_path = OUTPUTS_DIR / output_filename
+                
+                img.save(output_path)
+                
+                # 다음 턴을 위해 대화 기록 갱신 (inline bytes + thought_signature 보존)
+                store_image_chat_turn(
+                    current_session_id, session_history, user_content,
+                    response.candidates[0].content,
+                    part.inline_data.data, part.inline_data.mime_type,
+                    client, model,
+                )
+                response_data = {
+                    "status": "success",
+                    "message": "이미지가 생성되었습니다.",
+                    "output_file": f"/outputs/{output_filename}",
+                    "session_id": current_session_id
+                }
+                if text_response:
+                    response_data["llm_response"] = text_response
+                
+                return JSONResponse(response_data)
+        
         # 이미지 데이터가 없지만 텍스트 응답이 있는 경우
         if text_response:
             logger.info("Text-only response received (no image generated)")
@@ -871,17 +955,18 @@ async def image_to_image(
                 "message": "텍스트 응답을 받았습니다.",
                 "llm_response": text_response,
                 "text_only": True,
-                "session_id": current_session_id,
+                "session_id": current_session_id
             })
-
+        
         logger.error("No image data or text response received from API")
         raise HTTPException(status_code=500, detail="이미지 생성 실패: 응답에 이미지 데이터가 없습니다.")
-
-    except HTTPException:
-        raise
+    
     except Exception as e:
         logger.error(f"Image to Image error: {str(e)}")
         logger.error(traceback.format_exc())
+        for upload_path in upload_paths:
+            if upload_path.exists():
+                upload_path.unlink()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/text-to-video")

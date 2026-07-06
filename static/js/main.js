@@ -62,7 +62,7 @@ async function loadModelConfig() {
         const response = await fetch('/api/config');
         if (response.ok) {
             modelConfig = {...modelConfig, ...await response.json()};
-            log(`모델 설정 로드: ${modelConfig.standard_model_alias}, ${modelConfig.advanced_model_alias}`);
+            log(`모델 설정 로드: ${modelConfig.standard_model_alias}, ${modelConfig.lite_model_alias}, ${modelConfig.advanced_model_alias}`);
         }
     } catch (e) {
         log('모델 설정 로드 실패, 기본값 사용');
