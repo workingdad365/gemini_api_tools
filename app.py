@@ -80,6 +80,32 @@ DB_PATH = BASE_DIR / "data.db"  # 웹앱 전용 데이터베이스
 UPLOADS_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
 
+
+def compute_asset_version() -> str:
+    """정적 자산(css/js)의 최종 수정 시각 기반 캐시 무효화용 버전 문자열을 생성한다.
+
+    style.css와 main.js 중 가장 최근 수정 시각(epoch 초)을 버전으로 사용한다.
+    파일이 실제로 변경되었을 때만 버전이 바뀌므로, 변경이 없으면 브라우저 캐시가
+    그대로 재사용되어 불필요한 재다운로드가 발생하지 않는다.
+
+    Returns:
+        정수 형태의 버전 문자열. 대상 파일이 없으면 "1".
+    """
+    asset_files = [
+        STATIC_DIR / "css" / "style.css",
+        STATIC_DIR / "js" / "main.js",
+    ]
+    latest_mtime = 0.0
+    for asset in asset_files:
+        if asset.exists():
+            latest_mtime = max(latest_mtime, asset.stat().st_mtime)
+    return str(int(latest_mtime)) if latest_mtime else "1"
+
+
+# 서버 시작 시점의 정적 자산 버전 (index.html 주입용)
+ASSET_VERSION = compute_asset_version()
+logger.info(f"Asset version for cache-busting: {ASSET_VERSION}")
+
 # API 키 리스트 초기화
 # GEMINI_API_KEY_LIST에서 키 목록 로드
 api_key_list_str = os.getenv("GEMINI_API_KEY_LIST")
@@ -710,8 +736,11 @@ async def read_root(request: Request, session_token: str = Cookie(None)):
 
     if not verify_session(session_token):
         return RedirectResponse(url="/login", status_code=302)
-        
-    return FileResponse(str(STATIC_DIR / "index.html"))
+
+    # index.html에 정적 자산 버전을 주입하여 캐시 무효화 처리
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = html.replace("{{ASSET_VERSION}}", ASSET_VERSION)
+    return HTMLResponse(content=html)
 
 
 # @app.get("/")
