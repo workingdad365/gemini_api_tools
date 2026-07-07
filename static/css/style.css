@@ -411,6 +411,8 @@ h6 {
 .gallery-thumb-item {
     position: relative;
     width: 100%;
+    /* flex 컬럼에서 축소되지 않도록 하여 자연 높이 유지 (넘칠 때 컨테이너가 스크롤됨) */
+    flex-shrink: 0;
     border-radius: 10px;
     overflow: hidden;
     cursor: pointer;
