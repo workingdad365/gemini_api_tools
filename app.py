@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import time
 import base64
 import sqlite3
@@ -12,6 +14,9 @@ from datetime import datetime
 from io import BytesIO
 from typing import Optional
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 
 import secrets
 import hashlib
@@ -141,6 +146,199 @@ ADVANCED_MODEL_ALIAS = "Nano Banana Pro"
 PRO_MODEL = ADVANCED_MODEL
 PRO_MODEL_ALIAS = ADVANCED_MODEL_ALIAS
 logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), LITE: {LITE_MODEL} ({LITE_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
+
+# ===== laozhang (OpenAI 호환 3rd-party 게이트웨이) 연동 설정 =====
+# 이미지 생성/편집(Text to Image, Image to Image)에서 provider="laozhang"일 때만 사용된다.
+# 비디오/TTS 및 기본 이미지 경로는 여전히 기존 Gemini SDK를 사용한다.
+LAOZHANG_API_BASE_URL = os.getenv("LAOZHANG_API_BASE_URL", "https://api.laozhang.ai/v1")
+
+_laozhang_key_list_str = os.getenv("LAOZHANG_API_KEY_LIST")
+if _laozhang_key_list_str:
+    laozhang_api_key_list = _laozhang_key_list_str.split()
+else:
+    _laozhang_single_key = os.getenv("LAOZHANG_API_KEY")
+    laozhang_api_key_list = [_laozhang_single_key] if _laozhang_single_key else []
+
+# laozhang 키가 하나라도 있으면 laozhang 모드 활성화 (프론트 체크박스 노출 근거)
+LAOZHANG_AVAILABLE = bool(laozhang_api_key_list)
+if LAOZHANG_AVAILABLE:
+    logger.info(f"laozhang mode enabled - loaded {len(laozhang_api_key_list)} API key(s)")
+else:
+    logger.info("laozhang API key not configured; laozhang mode disabled")
+
+# app.py 내부 모델명 -> laozhang(OpenAI 호환) 모델명 매핑.
+# laozhang는 -preview 접미사를 사용하며 lite 전용 모델을 제공하지 않아 flash로 대체한다.
+LAOZHANG_MODEL_MAP = {
+    STANDARD_MODEL: "gemini-3.1-flash-image-preview",
+    LITE_MODEL: "gemini-3.1-flash-image-preview",
+    ADVANCED_MODEL: "gemini-3-pro-image-preview",
+}
+
+# laozhang 응답 본문에서 이미지를 추출하기 위한 정규식
+_LAOZHANG_MD_IMG_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+_LAOZHANG_DATA_URL_RE = re.compile(r"data:(image/[^;]+);base64,([A-Za-z0-9+/=\s]+)")
+_LAOZHANG_HTTP_URL_RE = re.compile(r"https?://[^\s)]+")
+
+
+def _laozhang_headers() -> dict:
+    """laozhang 호출용 헤더를 생성한다(랜덤 키 선택, 로그엔 마스킹)."""
+    key = random.choice(laozhang_api_key_list)
+    masked_key = key[:8] + "..." if len(key) > 8 else key
+    logger.info(f"Selected laozhang API key: {masked_key} (from {len(laozhang_api_key_list)} keys)")
+    return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+
+def _laozhang_chat_completion(payload: dict, timeout: int = 180) -> dict:
+    """laozhang의 OpenAI 호환 /chat/completions 엔드포인트를 호출하고 JSON을 반환한다.
+
+    Args:
+        payload: OpenAI chat/completions 요청 바디(model, messages 등).
+        timeout: 요청 타임아웃(초).
+
+    Returns:
+        파싱된 응답 JSON dict.
+
+    Raises:
+        HTTPException: HTTP 오류(상태코드 전달) 또는 네트워크 오류(502).
+    """
+    url = LAOZHANG_API_BASE_URL.rstrip("/") + "/chat/completions"
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = UrlRequest(url, data=data, headers=_laozhang_headers(), method="POST")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        logger.error(f"laozhang HTTP {exc.code}: {body}")
+        status = exc.code if exc.code and exc.code >= 400 else 502
+        raise HTTPException(status_code=status, detail=f"laozhang API 오류: {body[:500]}") from exc
+    except URLError as exc:
+        logger.error(f"laozhang connection error: {exc}")
+        raise HTTPException(status_code=502, detail=f"laozhang 연결 실패: {exc}") from exc
+
+
+def _laozhang_download(url: str, timeout: int = 120) -> tuple[bytes, str]:
+    """laozhang가 URL로 돌려준 이미지를 다운로드하여 (바이트, MIME)를 반환한다."""
+    request = UrlRequest(url, headers={"User-Agent": "gemini-api-tools/1.0"})
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            data = response.read()
+            content_type = (
+                response.headers.get("Content-Type")
+                or mimetypes.guess_type(url)[0]
+                or "image/png"
+            )
+            return data, content_type.split(";", 1)[0]
+    except (HTTPError, URLError) as exc:
+        logger.error(f"Failed to download laozhang asset: {exc}")
+        raise HTTPException(status_code=502, detail=f"생성 결과 다운로드 실패: {exc}") from exc
+
+
+def _parse_laozhang_image(content: str) -> tuple[Optional[bytes], str, str]:
+    """laozhang chat 응답 본문에서 이미지(바이트/MIME)와 잔여 텍스트를 추출한다.
+
+    laozhang는 이미지를 마크다운(![](data:image/...;base64,...)) 또는 URL 형태로 본문에
+    임베드하여 반환한다. data URL이면 base64 디코드하고, http URL이면 다운로드한다.
+
+    Args:
+        content: chat 응답 message.content 문자열.
+
+    Returns:
+        (image_bytes, mime_type, text) 튜플. 이미지가 없으면 image_bytes는 None.
+    """
+    if not content:
+        return None, "image/png", ""
+
+    src: Optional[str] = None
+    match = _LAOZHANG_MD_IMG_RE.search(content)
+    if match:
+        src = match.group(1).strip()
+        text = _LAOZHANG_MD_IMG_RE.sub("", content).strip()
+    else:
+        data_match = _LAOZHANG_DATA_URL_RE.search(content)
+        if data_match:
+            src = data_match.group(0)
+        else:
+            url_match = _LAOZHANG_HTTP_URL_RE.search(content)
+            src = url_match.group(0).rstrip(").,]") if url_match else None
+        text = content.strip()
+
+    image_bytes: Optional[bytes] = None
+    mime_type = "image/png"
+    if src and src.startswith("data:"):
+        data_match = _LAOZHANG_DATA_URL_RE.search(src)
+        if data_match:
+            mime_type = data_match.group(1)
+            image_bytes = base64.b64decode(re.sub(r"\s+", "", data_match.group(2)))
+    elif src and src.startswith("http"):
+        image_bytes, mime_type = _laozhang_download(src)
+
+    return image_bytes, mime_type, text
+
+
+def laozhang_generate_image(
+    prompt: str,
+    model: str,
+    input_images: Optional[list[tuple[bytes, str]]] = None,
+    aspect_ratio: Optional[str] = None,
+    resolution: Optional[str] = None,
+) -> tuple[Optional[bytes], str, str]:
+    """laozhang(OpenAI 호환) chat/completions로 이미지를 생성 또는 편집한다.
+
+    OpenAI chat/completions에는 비율/해상도 전용 필드가 없으므로 프롬프트에 자연어 지시로
+    부가한다. 입력 이미지는 data URL(image_url)로 전달한다.
+
+    Args:
+        prompt: 사용자 프롬프트.
+        model: app.py 내부 모델명(내부에서 laozhang 모델명으로 매핑).
+        input_images: 편집/참조용 입력 이미지 (바이트, MIME) 리스트.
+        aspect_ratio: 이미지 비율(예: "16:9"). 신규 text-to-image에서만 의미.
+        resolution: 해상도(예: "1K", "2K"). 프롬프트 지시로 부가.
+
+    Returns:
+        (image_bytes, mime_type, text) 튜플. 이미지가 없으면 image_bytes는 None.
+
+    Raises:
+        HTTPException: laozhang API/네트워크 오류 또는 응답 형식 이상.
+    """
+    laozhang_model = LAOZHANG_MODEL_MAP.get(model, model)
+
+    directives: list[str] = []
+    if aspect_ratio:
+        directives.append(f"aspect ratio {aspect_ratio}")
+    if resolution:
+        directives.append(f"{resolution} resolution")
+    full_prompt = prompt if not directives else f"{prompt}\n\n(Output image: {', '.join(directives)}.)"
+
+    message_content: list[dict] = [{"type": "text", "text": full_prompt}]
+    for img_bytes, img_mime in input_images or []:
+        encoded = base64.b64encode(img_bytes).decode("utf-8")
+        message_content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{img_mime};base64,{encoded}"},
+        })
+
+    payload = {"model": laozhang_model, "messages": [{"role": "user", "content": message_content}]}
+    logger.info(
+        f"Calling laozhang chat/completions - model: {laozhang_model}, input_images: {len(input_images or [])}"
+    )
+    response = _laozhang_chat_completion(payload)
+
+    choices = response.get("choices") or []
+    if not choices:
+        raise HTTPException(status_code=502, detail=f"laozhang 응답에 choices가 없습니다: {response}")
+
+    raw_content = (choices[0].get("message") or {}).get("content")
+    if isinstance(raw_content, list):
+        # content가 파트 리스트로 오는 경우 텍스트 파트만 결합
+        text_content = "".join(
+            part.get("text", "") for part in raw_content if isinstance(part, dict)
+        )
+    else:
+        text_content = raw_content or ""
+
+    return _parse_laozhang_image(text_content)
+
 
 def get_genai_client() -> genai.Client:
     """매 요청마다 랜덤 API 키를 선택하여 새 클라이언트 생성"""
@@ -774,6 +972,8 @@ async def get_config():
         "lite_model_alias": LITE_MODEL_ALIAS,
         "pro_model_alias": PRO_MODEL_ALIAS,
         "advanced_model_alias": ADVANCED_MODEL_ALIAS,
+        # laozhang(3rd-party) 모드 사용 가능 여부. 프론트 체크박스 노출 조건으로 사용된다.
+        "laozhang_available": LAOZHANG_AVAILABLE,
     })
 
 # 출력 이미지 갤러리 API
@@ -855,6 +1055,134 @@ async def delete_output(filename: str):
     return JSONResponse({"status": "success", "message": "이미지가 삭제되었습니다."})
 
 
+def _build_image_response(image_bytes: Optional[bytes], mime_type: str, text_response: str, current_session_id: str) -> JSONResponse:
+    """이미지/텍스트 응답을 Gemini 경로와 동일한 JSON 스펙으로 구성한다."""
+    if image_bytes:
+        output_file = save_output_image(image_bytes, mime_type)
+        response_data = {
+            "status": "success",
+            "message": "이미지가 생성되었습니다.",
+            "output_file": output_file,
+            "session_id": current_session_id,
+        }
+        if text_response:
+            response_data["llm_response"] = text_response
+        return JSONResponse(response_data)
+
+    if text_response:
+        logger.info("laozhang: no image generated, but text response received")
+        return JSONResponse({
+            "status": "success",
+            "message": "텍스트 응답을 받았습니다.",
+            "text_only": True,
+            "llm_response": text_response,
+            "session_id": current_session_id,
+        })
+
+    logger.error("laozhang: no image or text data received")
+    raise HTTPException(status_code=500, detail="응답 데이터 없음")
+
+
+async def _text_to_image_laozhang(
+    prompt: str,
+    aspect_ratio: str,
+    model: str,
+    resolution: str,
+    is_new: bool,
+    session_id: Optional[str],
+) -> JSONResponse:
+    """laozhang(3rd-party) 경로의 Text to Image 처리.
+
+    laozhang는 서버 사이드 상태(previous_interaction_id)가 없어, 멀티턴 편집 시에는
+    세션에 저장해 둔 직전 결과 이미지를 재전송하여 이어간다.
+    """
+    if not LAOZHANG_AVAILABLE:
+        raise HTTPException(status_code=400, detail="laozhang API 키가 설정되지 않았습니다. (.env의 LAOZHANG_API_KEY)")
+
+    continue_session = not is_new and session_id and session_id in image_chat_sessions
+    input_images: Optional[list[tuple[bytes, str]]] = None
+    if continue_session:
+        previous = image_chat_sessions[session_id]
+        previous_bytes = previous.get("image_bytes")
+        if not previous_bytes:
+            raise HTTPException(status_code=400, detail="편집할 이전 laozhang 세션 정보가 없습니다.")
+        input_images = [(previous_bytes, previous.get("mime_type", "image/png"))]
+        logger.info(f"Continuing laozhang session (image resend): {session_id}")
+
+    image_bytes, mime_type, text_response = laozhang_generate_image(
+        prompt,
+        model,
+        input_images=input_images,
+        # 이어가기 턴에는 비율을 재지정하지 않고 원본 맥락을 유지
+        aspect_ratio=aspect_ratio if not continue_session else None,
+        resolution=resolution,
+    )
+
+    current_session_id = session_id if continue_session else str(uuid.uuid4())
+    if not continue_session:
+        logger.info(f"Created new laozhang chat session: {current_session_id}")
+
+    # 다음 턴을 위해 최신 결과 이미지를 세션에 저장 (laozhang은 서버 상태가 없으므로 필수)
+    if image_bytes:
+        image_chat_sessions[current_session_id] = {
+            "provider": "laozhang",
+            "image_bytes": image_bytes,
+            "mime_type": mime_type,
+            "model": model,
+        }
+
+    return _build_image_response(image_bytes, mime_type, text_response, current_session_id)
+
+
+async def _image_to_image_laozhang(
+    prompt: str,
+    files: Optional[list[UploadFile]],
+    model: str,
+    resolution: str,
+    is_new: bool,
+    session_id: Optional[str],
+) -> JSONResponse:
+    """laozhang(3rd-party) 경로의 Image to Image 처리."""
+    if not LAOZHANG_AVAILABLE:
+        raise HTTPException(status_code=400, detail="laozhang API 키가 설정되지 않았습니다. (.env의 LAOZHANG_API_KEY)")
+
+    continue_session = not is_new and session_id and session_id in image_chat_sessions
+    if continue_session:
+        previous = image_chat_sessions[session_id]
+        previous_bytes = previous.get("image_bytes")
+        if not previous_bytes:
+            raise HTTPException(status_code=400, detail="편집할 이전 laozhang 세션 정보가 없습니다.")
+        input_images: list[tuple[bytes, str]] = [(previous_bytes, previous.get("mime_type", "image/png"))]
+        # 편집 중 추가 참조 이미지를 올린 경우 함께 전달 (직전 결과 1장 + 추가 13장)
+        if files:
+            input_images.extend(await read_upload_images(files[:13]))
+        current_session_id = session_id
+        logger.info(f"Continuing laozhang image session (image resend): {session_id}")
+    else:
+        if not files:
+            raise HTTPException(status_code=400, detail="새로 만들기 모드에서는 이미지 파일이 필요합니다.")
+        input_images = await read_upload_images(files[:14])
+        current_session_id = str(uuid.uuid4())
+        logger.info(f"Created new laozhang chat session for image-to-image: {current_session_id}")
+
+    image_bytes, mime_type, text_response = laozhang_generate_image(
+        prompt,
+        model,
+        input_images=input_images,
+        resolution=resolution,
+    )
+
+    if image_bytes:
+        image_chat_sessions[current_session_id] = {
+            "provider": "laozhang",
+            "image_bytes": image_bytes,
+            "mime_type": mime_type,
+            "model": model,
+        }
+
+    return _build_image_response(image_bytes, mime_type, text_response, current_session_id)
+
+
 @app.post("/api/text-to-image")
 async def text_to_image(
     prompt: str = Form(...),
@@ -862,14 +1190,23 @@ async def text_to_image(
     model: str = Form(None),
     resolution: str = Form("1K"),
     is_new: bool = Form(True),
-    session_id: Optional[str] = Form(None)
+    session_id: Optional[str] = Form(None),
+    provider: str = Form("gemini")
 ):
-    """Text to Image 작업 (Interactions API 기반 Multi-turn 지원)"""
+    """Text to Image 작업 (Interactions API 기반 Multi-turn 지원).
+
+    provider="laozhang"이면 OpenAI 호환 3rd-party 게이트웨이로 생성/편집하고,
+    그 외("gemini", 기본값)이면 기존 Gemini Interactions API 경로를 사용한다.
+    """
     try:
         if model is None:
             model = STANDARD_MODEL
-        logger.info(f"Text to Image request - prompt length: {len(prompt)}, aspect_ratio: {aspect_ratio}, model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
+        logger.info(f"Text to Image request - provider: {provider}, prompt length: {len(prompt)}, aspect_ratio: {aspect_ratio}, model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
         logger.info(f"Text to Image prompt: {prompt}")
+
+        # ===== laozhang(3rd-party) 경로 =====
+        if provider == "laozhang":
+            return await _text_to_image_laozhang(prompt, aspect_ratio, model, resolution, is_new, session_id)
 
         client = get_genai_client()
 
@@ -943,14 +1280,22 @@ async def image_to_image(
     model: str = Form(None),
     resolution: str = Form("1K"),
     is_new: bool = Form(True),
-    session_id: Optional[str] = Form(None)
+    session_id: Optional[str] = Form(None),
+    provider: str = Form("gemini")
 ):
-    """Image to Image 작업 (Interactions API 기반, 멀티 이미지 및 Multi-turn 지원)"""
+    """Image to Image 작업 (Interactions API 기반, 멀티 이미지 및 Multi-turn 지원).
+
+    provider="laozhang"이면 OpenAI 호환 3rd-party 게이트웨이를 사용한다.
+    """
     try:
         if model is None:
             model = STANDARD_MODEL
-        logger.info(f"Image to Image request - model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
+        logger.info(f"Image to Image request - provider: {provider}, model: {model}, resolution: {resolution}, is_new: {is_new}, session_id: {session_id}")
         logger.info(f"Image to Image prompt: {prompt}")
+
+        # ===== laozhang(3rd-party) 경로 =====
+        if provider == "laozhang":
+            return await _image_to_image_laozhang(prompt, files, model, resolution, is_new, session_id)
 
         client = get_genai_client()
 

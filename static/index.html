@@ -126,6 +126,19 @@
                             -->
                         </div>
 
+                        <!-- laozhang(3rd-party) 모드 토글: laozhang 키가 설정된 경우에만 노출 -->
+                        <div class="mb-4" id="laozhangModeGroup" style="display: none;">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="laozhangMode">
+                                <label class="form-check-label fw-bold text-dark" for="laozhangMode">
+                                    laozhang 모드 (3rd-party API 사용)
+                                </label>
+                            </div>
+                            <div class="form-text text-muted small mt-1">
+                                끄면 기본 Gemini로 생성합니다. Text to Image / Image to Image에서만 적용됩니다.
+                            </div>
+                        </div>
+
                         <!-- 이미지 해상도 -->
                         <div class="mb-4" id="imageResolutionGroup" style="display: none;">
                             <label class="form-label fw-bold text-dark">이미지 해상도</label>
