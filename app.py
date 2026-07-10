@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.datastructures import Headers
 
 from google import genai
 from google.genai import types
@@ -389,6 +390,55 @@ def validate_veo_options(model: str, resolution: str) -> None:
 # 비디오 객체 저장소 (메모리)
 # UUID -> {"video": generated_video 객체, "model": Veo 모델 코드} 매핑
 video_objects_cache = {}
+
+# 장시간 실행되는 비디오 작업 저장소 (메모리)
+# 리버스 프록시의 요청 타임아웃을 피하기 위해 생성 요청과 결과 조회를 분리한다.
+video_jobs = {}
+video_job_tasks = set()
+
+
+async def run_video_job(job_id: str, operation) -> None:
+    """비디오 작업 코루틴을 실행하고 조회 가능한 상태로 결과를 저장한다.
+
+    Args:
+        job_id: 클라이언트에 반환된 비디오 작업 UUID.
+        operation: 기존 비디오 생성 또는 확장 엔드포인트의 코루틴.
+    """
+    video_jobs[job_id] = {"status": "running", "created_at": time.time()}
+    try:
+        response = await operation
+        result = json.loads(response.body.decode("utf-8"))
+        video_jobs[job_id] = {
+            "status": "success",
+            "result": result,
+            "created_at": video_jobs[job_id]["created_at"],
+            "completed_at": time.time(),
+        }
+    except HTTPException as exc:
+        video_jobs[job_id] = {
+            "status": "error",
+            "detail": exc.detail,
+            "created_at": video_jobs[job_id]["created_at"],
+            "completed_at": time.time(),
+        }
+    except Exception as exc:
+        logger.exception("Video background job failed: %s", job_id)
+        video_jobs[job_id] = {
+            "status": "error",
+            "detail": str(exc),
+            "created_at": video_jobs[job_id]["created_at"],
+            "completed_at": time.time(),
+        }
+
+
+def start_video_job(operation) -> str:
+    """비디오 작업을 이벤트 루프에 등록하고 작업 UUID를 반환한다."""
+    job_id = str(uuid.uuid4())
+    video_jobs[job_id] = {"status": "queued", "created_at": time.time()}
+    task = asyncio.create_task(run_video_job(job_id, operation))
+    video_job_tasks.add(task)
+    task.add_done_callback(video_job_tasks.discard)
+    return job_id
 
 # 이미지 채팅 세션 저장소 (메모리)
 # session_id -> {"chat": chat, "client": client} 매핑
@@ -1495,6 +1545,19 @@ async def text_to_video(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/api/video-jobs/text-to-video", status_code=202)
+async def start_text_to_video_job(
+    prompt: str = Form(...),
+    model: str = Form(VEO_DEFAULT_MODEL),
+    resolution: str = Form("720p"),
+    aspect_ratio: str = Form("16:9"),
+):
+    """Text to Video 작업을 백그라운드에서 시작하고 즉시 작업 ID를 반환한다."""
+    validate_veo_options(model, resolution)
+    job_id = start_video_job(text_to_video(prompt, model, resolution, aspect_ratio))
+    return JSONResponse({"status": "queued", "job_id": job_id}, status_code=202)
+
 @app.post("/api/image-to-video")
 async def image_to_video(
     prompt: str = Form(...),
@@ -1774,6 +1837,55 @@ async def extend_video(
     except Exception as e:
         logger.error(f"Video extension error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/video-jobs/image-to-video", status_code=202)
+async def start_image_to_video_job(
+    prompt: str = Form(...),
+    files: list[UploadFile] = File(...),
+    model: str = Form(VEO_DEFAULT_MODEL),
+    resolution: str = Form("720p"),
+    aspect_ratio: str = Form("16:9"),
+):
+    """Image to Video 작업을 백그라운드에서 시작하고 즉시 작업 ID를 반환한다.
+
+    요청 종료 후 원본 UploadFile이 닫히므로 파일 내용을 독립적인 메모리 스트림으로
+    복사한 뒤 백그라운드 작업에 전달한다.
+    """
+    validate_veo_options(model, resolution)
+    copied_files = []
+    for file in files[:3]:
+        content = await file.read()
+        headers = Headers({"content-type": file.content_type or "image/png"})
+        copied_files.append(UploadFile(file=BytesIO(content), filename=file.filename, headers=headers))
+
+    job_id = start_video_job(
+        image_to_video(prompt, copied_files, model, resolution, aspect_ratio)
+    )
+    return JSONResponse({"status": "queued", "job_id": job_id}, status_code=202)
+
+
+@app.post("/api/video-jobs/extend-video", status_code=202)
+async def start_extend_video_job(
+    prompt: str = Form(...),
+    video_uuid: str = Form(...),
+    resolution: str = Form("720p"),
+    aspect_ratio: str = Form("16:9"),
+):
+    """비디오 확장 작업을 백그라운드에서 시작하고 즉시 작업 ID를 반환한다."""
+    if video_uuid not in video_objects_cache:
+        raise HTTPException(status_code=400, detail="확장할 비디오를 찾을 수 없습니다.")
+    job_id = start_video_job(extend_video(prompt, video_uuid, resolution, aspect_ratio))
+    return JSONResponse({"status": "queued", "job_id": job_id}, status_code=202)
+
+
+@app.get("/api/video-jobs/{job_id}")
+async def get_video_job(job_id: str):
+    """백그라운드 비디오 작업의 현재 상태 또는 최종 결과를 반환한다."""
+    job = video_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="비디오 작업을 찾을 수 없습니다.")
+    return JSONResponse(job)
 
 @app.post("/api/text-to-speech")
 async def text_to_speech(

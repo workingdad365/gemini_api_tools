@@ -715,42 +715,20 @@ async function executeTextToVideo(prompt, model, resolution, aspectRatio) {
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
-    // AbortController로 타임아웃 설정 (10분)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10분
-    
-    try {
-        const response = await fetch('/api/text-to-video', {
-            method: 'POST',
-            body: formData,
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
+    const result = await executeVideoJob('/api/video-jobs/text-to-video', formData);
         
-        const result = await response.json();
-        
-        if (!response.ok) {
-            const error = new Error(result.detail || '작업 실패');
-            error.details = result.detail;
-            throw error;
-        }
-        
-        // 비디오 UUID 및 해상도 저장 (확장 기능용)
-        log(`Response video_uuid: ${result.video_uuid}`);
-        if (result.video_uuid) {
-            lastGeneratedVideoUUID = result.video_uuid;
-            lastVideoResolution = resolution;
-            lastVideoModel = result.model || model;
-            log(`Saved video UUID: ${lastGeneratedVideoUUID}, model: ${lastVideoModel}, resolution: ${lastVideoResolution}`);
-        } else {
-            log(`No video_uuid in response`);
-        }
-        
-        return result;
-    } catch (error) {
-        clearTimeout(timeoutId);
-        throw error;
+    // 비디오 UUID 및 해상도 저장 (확장 기능용)
+    log(`Response video_uuid: ${result.video_uuid}`);
+    if (result.video_uuid) {
+        lastGeneratedVideoUUID = result.video_uuid;
+        lastVideoResolution = resolution;
+        lastVideoModel = result.model || model;
+        log(`Saved video UUID: ${lastGeneratedVideoUUID}, model: ${lastVideoModel}, resolution: ${lastVideoResolution}`);
+    } else {
+        log(`No video_uuid in response`);
     }
+
+    return result;
 }
 
 async function executeImageToVideo(prompt, files, model, resolution, aspectRatio) {
@@ -768,42 +746,20 @@ async function executeImageToVideo(prompt, files, model, resolution, aspectRatio
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
-    // AbortController로 타임아웃 설정 (10분)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10분
-    
-    try {
-        const response = await fetch('/api/image-to-video', {
-            method: 'POST',
-            body: formData,
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
+    const result = await executeVideoJob('/api/video-jobs/image-to-video', formData);
         
-        const result = await response.json();
-        
-        if (!response.ok) {
-            const error = new Error(result.detail || '작업 실패');
-            error.details = result.detail;
-            throw error;
-        }
-        
-        // 비디오 UUID 및 해상도 저장 (확장 기능용)
-        log(`Response video_uuid: ${result.video_uuid}`);
-        if (result.video_uuid) {
-            lastGeneratedVideoUUID = result.video_uuid;
-            lastVideoResolution = resolution;
-            lastVideoModel = result.model || model;
-            log(`Saved video UUID: ${lastGeneratedVideoUUID}, model: ${lastVideoModel}, resolution: ${lastVideoResolution}`);
-        } else {
-            log(`No video_uuid in response`);
-        }
-        
-        return result;
-    } catch (error) {
-        clearTimeout(timeoutId);
-        throw error;
+    // 비디오 UUID 및 해상도 저장 (확장 기능용)
+    log(`Response video_uuid: ${result.video_uuid}`);
+    if (result.video_uuid) {
+        lastGeneratedVideoUUID = result.video_uuid;
+        lastVideoResolution = resolution;
+        lastVideoModel = result.model || model;
+        log(`Saved video UUID: ${lastGeneratedVideoUUID}, model: ${lastVideoModel}, resolution: ${lastVideoResolution}`);
+    } else {
+        log(`No video_uuid in response`);
     }
+
+    return result;
 }
 
 async function executeVideoExtension(prompt, videoUUID, resolution, aspectRatio) {
@@ -815,38 +771,64 @@ async function executeVideoExtension(prompt, videoUUID, resolution, aspectRatio)
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
-    // AbortController로 타임아웃 설정 (10분)
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 600000); // 10분
-    
-    try {
-        const response = await fetch('/api/extend-video', {
-            method: 'POST',
-            body: formData,
-            signal: controller.signal
+    const result = await executeVideoJob('/api/video-jobs/extend-video', formData);
+        
+    // 확장된 비디오 UUID 및 해상도 저장 (반복 확장 가능)
+    log(`Response extended video_uuid: ${result.video_uuid}`);
+    if (result.video_uuid) {
+        lastGeneratedVideoUUID = result.video_uuid;
+        // 확장 시 해상도는 동일하게 유지됨
+        log(`Saved extended video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
+    }
+
+    return result;
+}
+
+// 장시간 비디오 작업을 시작한 뒤 짧은 상태 조회 요청으로 완료를 기다린다.
+// 각 HTTP 요청이 빠르게 끝나므로 Cloudflare/nginx 등의 프록시 타임아웃을 피할 수 있다.
+async function executeVideoJob(endpoint, formData) {
+    const startResponse = await fetch(endpoint, { method: 'POST', body: formData });
+    const startResult = await readJsonResponse(startResponse);
+    if (!startResponse.ok) {
+        const error = new Error(startResult.detail || '비디오 작업 시작 실패');
+        error.details = startResult.detail;
+        throw error;
+    }
+
+    const jobId = startResult.job_id;
+    log(`비디오 작업 등록됨: ${jobId}`);
+
+    while (true) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        const statusResponse = await fetch(`/api/video-jobs/${encodeURIComponent(jobId)}`, {
+            cache: 'no-store'
         });
-        clearTimeout(timeoutId);
-        
-        const result = await response.json();
-        
-        if (!response.ok) {
-            const error = new Error(result.detail || '작업 실패');
-            error.details = result.detail;
+        const statusResult = await readJsonResponse(statusResponse);
+        if (!statusResponse.ok) {
+            const error = new Error(statusResult.detail || '비디오 작업 상태 조회 실패');
+            error.details = statusResult.detail;
             throw error;
         }
-        
-        // 확장된 비디오 UUID 및 해상도 저장 (반복 확장 가능)
-        log(`Response extended video_uuid: ${result.video_uuid}`);
-        if (result.video_uuid) {
-            lastGeneratedVideoUUID = result.video_uuid;
-            // 확장 시 해상도는 동일하게 유지됨
-            log(`Saved extended video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
+        if (statusResult.status === 'success') {
+            return statusResult.result;
         }
-        
-        return result;
+        if (statusResult.status === 'error') {
+            const error = new Error(statusResult.detail || '비디오 생성 실패');
+            error.details = statusResult.detail;
+            throw error;
+        }
+        progressMessage.textContent = '비디오 생성 중...';
+    }
+}
+
+// 프록시 오류 페이지처럼 JSON이 아닌 응답도 이해 가능한 오류로 변환한다.
+async function readJsonResponse(response) {
+    const text = await response.text();
+    try {
+        return JSON.parse(text);
     } catch (error) {
-        clearTimeout(timeoutId);
-        throw error;
+        const contentType = response.headers.get('content-type') || '알 수 없음';
+        throw new Error(`서버가 JSON 대신 ${contentType} 응답을 반환했습니다. HTTP ${response.status}`);
     }
 }
 
