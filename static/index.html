@@ -163,14 +163,19 @@
                         <!-- 비디오 설정 -->
                         <div id="videoSettingsGroup" style="display: none;">
                             <div class="row">
-                                <div class="col-md-6 mb-4">
-                                    <label class="form-label fw-bold text-dark">비디오 해상도</label>
-                                    <select class="form-select" id="videoResolution">
-                                        <option value="720p" selected>720p</option>
-                                        <option value="1080p">1080p</option>
+                                <div class="col-md-4 mb-4">
+                                    <label class="form-label fw-bold text-dark">비디오 생성 모델</label>
+                                    <select class="form-select" id="videoModel">
+                                        <!-- 서버 config API에서 동적으로 로드 -->
                                     </select>
                                 </div>
-                                <div class="col-md-6 mb-4">
+                                <div class="col-md-4 mb-4">
+                                    <label class="form-label fw-bold text-dark">비디오 해상도</label>
+                                    <select class="form-select" id="videoResolution">
+                                        <!-- 모델에 따라 동적으로 업데이트 -->
+                                    </select>
+                                </div>
+                                <div class="col-md-4 mb-4">
                                     <label class="form-label fw-bold text-dark">비디오 비율</label>
                                     <select class="form-select" id="videoAspectRatio">
                                         <option value="16:9" selected>16:9 (가로)</option>

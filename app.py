@@ -2,6 +2,7 @@ import os
 import re
 import json
 import time
+import asyncio
 import base64
 import sqlite3
 import mimetypes
@@ -146,6 +147,22 @@ ADVANCED_MODEL_ALIAS = "Nano Banana Pro"
 PRO_MODEL = ADVANCED_MODEL
 PRO_MODEL_ALIAS = ADVANCED_MODEL_ALIAS
 logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), LITE: {LITE_MODEL} ({LITE_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
+
+# Veo 3.1 모델 설정
+VEO_STANDARD_MODEL = "veo-3.1-generate-preview"
+VEO_FAST_MODEL = "veo-3.1-fast-generate-preview"
+VEO_LITE_MODEL = "veo-3.1-lite-generate-preview"
+VEO_MODELS = {
+    VEO_STANDARD_MODEL: "Veo 3.1 Standard Preview",
+    VEO_FAST_MODEL: "Veo 3.1 Fast Preview",
+    VEO_LITE_MODEL: "Veo 3.1 Lite Preview",
+}
+VEO_DEFAULT_MODEL = VEO_LITE_MODEL
+VEO_RESOLUTIONS = {
+    VEO_STANDARD_MODEL: {"720p", "1080p", "4k"},
+    VEO_FAST_MODEL: {"720p", "1080p", "4k"},
+    VEO_LITE_MODEL: {"720p", "1080p"},
+}
 
 # ===== laozhang (OpenAI 호환 3rd-party 게이트웨이) 연동 설정 =====
 # 이미지 생성/편집(Text to Image, Image to Image)에서 provider="laozhang"일 때만 사용된다.
@@ -348,8 +365,29 @@ def get_genai_client() -> genai.Client:
     logger.info(f"Selected API key: {masked_key} (from {len(api_key_list)} keys)")
     return genai.Client(api_key=selected_key)
 
+
+def validate_veo_options(model: str, resolution: str) -> None:
+    """Veo 모델과 해상도 조합이 공식 지원 범위인지 검증한다.
+
+    Args:
+        model: Gemini API에 전달할 Veo 모델 코드.
+        resolution: 요청한 출력 해상도.
+
+    Raises:
+        HTTPException: 알 수 없는 모델이거나 해당 모델이 지원하지 않는 해상도인 경우.
+    """
+    if model not in VEO_MODELS:
+        raise HTTPException(status_code=400, detail="지원하지 않는 Veo 모델입니다.")
+    if resolution not in VEO_RESOLUTIONS[model]:
+        model_alias = VEO_MODELS[model]
+        supported = ", ".join(sorted(VEO_RESOLUTIONS[model]))
+        raise HTTPException(
+            status_code=400,
+            detail=f"{model_alias}은(는) {resolution} 해상도를 지원하지 않습니다. 지원 해상도: {supported}",
+        )
+
 # 비디오 객체 저장소 (메모리)
-# UUID -> generated_video 객체 매핑
+# UUID -> {"video": generated_video 객체, "model": Veo 모델 코드} 매핑
 video_objects_cache = {}
 
 # 이미지 채팅 세션 저장소 (메모리)
@@ -972,6 +1010,11 @@ async def get_config():
         "lite_model_alias": LITE_MODEL_ALIAS,
         "pro_model_alias": PRO_MODEL_ALIAS,
         "advanced_model_alias": ADVANCED_MODEL_ALIAS,
+        "video_standard_model": VEO_STANDARD_MODEL,
+        "video_fast_model": VEO_FAST_MODEL,
+        "video_lite_model": VEO_LITE_MODEL,
+        "video_default_model": VEO_DEFAULT_MODEL,
+        "video_model_aliases": VEO_MODELS,
         # laozhang(3rd-party) 모드 사용 가능 여부. 프론트 체크박스 노출 조건으로 사용된다.
         "laozhang_available": LAOZHANG_AVAILABLE,
     })
@@ -1377,12 +1420,13 @@ async def image_to_image(
 @app.post("/api/text-to-video")
 async def text_to_video(
     prompt: str = Form(...),
+    model: str = Form(VEO_DEFAULT_MODEL),
     resolution: str = Form("720p"),
     aspect_ratio: str = Form("16:9")
 ):
     """Text to Video 작업"""
     try:
-        model = "veo-3.1-generate-preview"
+        validate_veo_options(model, resolution)
         client = get_genai_client()
         operation = client.models.generate_videos(
             model=model,
@@ -1395,7 +1439,7 @@ async def text_to_video(
         
         # 작업 완료 대기
         while not operation.done:
-            time.sleep(10)
+            await asyncio.sleep(10)
             operation = client.operations.get(operation)
         
         # 작업 결과 확인
@@ -1436,16 +1480,18 @@ async def text_to_video(
         
         # 비디오 객체를 메모리에 저장 (확장 기능용)
         video_uuid = str(uuid.uuid4())
-        video_objects_cache[video_uuid] = generated_video
-        logger.info(f"Saved video object with UUID: {video_uuid}")
+        video_objects_cache[video_uuid] = {"video": generated_video, "model": model}
+        logger.info(f"Saved video object with UUID: {video_uuid}, model: {model}")
         
         return JSONResponse({
             "status": "success",
             "message": "비디오가 생성되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_uuid": video_uuid
+            "video_uuid": video_uuid,
+            "model": model,
         })
-    
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1453,14 +1499,22 @@ async def text_to_video(
 async def image_to_video(
     prompt: str = Form(...),
     files: list[UploadFile] = File(...),
+    model: str = Form(VEO_DEFAULT_MODEL),
     resolution: str = Form("720p"),
     aspect_ratio: str = Form("16:9")
 ):
     """Image to Video 작업 (멀티 이미지 지원)"""
     upload_paths = []
     try:
+        validate_veo_options(model, resolution)
+
         # 최대 3개까지만 처리
         files_to_process = files[:3]
+        if model == VEO_LITE_MODEL and len(files_to_process) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Veo 3.1 Lite는 시작 이미지 1장만 지원합니다. 여러 참조 이미지는 Standard 또는 Fast를 선택하세요.",
+            )
         logger.info(f"Processing {len(files_to_process)} images for image-to-video")
         
         # 파일 저장
@@ -1470,7 +1524,6 @@ async def image_to_video(
                 buffer.write(await file.read())
             upload_paths.append(upload_path)
         
-        model = "veo-3.1-generate-preview"
         client = get_genai_client()
         
         # 프롬프트가 없으면 기본 프롬프트 사용
@@ -1543,7 +1596,7 @@ async def image_to_video(
         
         # 작업 완료 대기
         while not operation.done:
-            time.sleep(10)
+            await asyncio.sleep(10)
             operation = client.operations.get(operation)
         
         # 작업 결과 확인
@@ -1585,8 +1638,8 @@ async def image_to_video(
         
         # 비디오 객체를 메모리에 저장 (확장 기능용)
         video_uuid = str(uuid.uuid4())
-        video_objects_cache[video_uuid] = video
-        logger.info(f"Saved video object with UUID: {video_uuid}")
+        video_objects_cache[video_uuid] = {"video": video, "model": model}
+        logger.info(f"Saved video object with UUID: {video_uuid}, model: {model}")
         
         # 업로드된 파일 삭제
         for upload_path in upload_paths:
@@ -1597,9 +1650,11 @@ async def image_to_video(
             "status": "success",
             "message": "비디오가 생성되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_uuid": video_uuid
+            "video_uuid": video_uuid,
+            "model": model,
         })
-    
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Image to Video error: {str(e)}")
         for upload_path in upload_paths:
@@ -1623,10 +1678,21 @@ async def extend_video(
             logger.error(f"Video UUID not found in cache: {video_uuid}")
             raise HTTPException(status_code=400, detail=f"비디오를 찾을 수 없습니다. UUID: {video_uuid}")
         
-        previous_video = video_objects_cache[video_uuid]
+        cached_video = video_objects_cache[video_uuid]
+        if isinstance(cached_video, dict):
+            previous_video = cached_video["video"]
+            model = cached_video["model"]
+        else:
+            # 서버 재시작 전 형식과의 호환성 유지
+            previous_video = cached_video
+            model = VEO_STANDARD_MODEL
         logger.info(f"Retrieved video object from cache: {video_uuid}")
-        
-        model = "veo-3.1-generate-preview"
+
+        if model == VEO_LITE_MODEL:
+            raise HTTPException(status_code=400, detail="Veo 3.1 Lite로 생성한 비디오는 확장할 수 없습니다.")
+        if resolution != "720p":
+            raise HTTPException(status_code=400, detail="비디오 확장은 720p 해상도만 지원합니다.")
+
         client = get_genai_client()
         
         # 비디오 확장 작업 시작 (previous_video.video 전달)
@@ -1645,7 +1711,7 @@ async def extend_video(
         
         # 작업 완료 대기
         while not operation.done:
-            time.sleep(10)
+            await asyncio.sleep(10)
             operation = client.operations.get(operation)
             logger.info("Waiting for video extension to complete...")
         
@@ -1687,8 +1753,8 @@ async def extend_video(
         
         # 확장된 비디오 객체를 메모리에 저장 (반복 확장 가능)
         extended_video_uuid = str(uuid.uuid4())
-        video_objects_cache[extended_video_uuid] = generated_video
-        logger.info(f"Saved extended video object with UUID: {extended_video_uuid}")
+        video_objects_cache[extended_video_uuid] = {"video": generated_video, "model": model}
+        logger.info(f"Saved extended video object with UUID: {extended_video_uuid}, model: {model}")
         logger.info(f"Video extension completed: {output_filename}")
         
         # 이전 UUID는 캐시에서 제거 (메모리 관리)
@@ -1700,9 +1766,11 @@ async def extend_video(
             "status": "success",
             "message": "비디오가 확장되었습니다.",
             "output_file": f"/outputs/{output_filename}",
-            "video_uuid": extended_video_uuid
+            "video_uuid": extended_video_uuid,
+            "model": model,
         })
-    
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Video extension error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1851,6 +1919,7 @@ if __name__ == "__main__":
         host="0.0.0.0", 
         port=33000,
         log_level="info",
-        access_log=True
+        access_log=True,
+        timeout_graceful_shutdown=10,
     )
 

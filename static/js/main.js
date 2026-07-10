@@ -17,6 +17,7 @@ const imageRatioGroup = document.getElementById('imageRatioGroup');
 const videoSettingsGroup = document.getElementById('videoSettingsGroup');
 const voiceSettingsGroup = document.getElementById('voiceSettingsGroup');
 const aspectRatio = document.getElementById('aspectRatio');
+const videoModel = document.getElementById('videoModel');
 const videoResolution = document.getElementById('videoResolution');
 const videoAspectRatio = document.getElementById('videoAspectRatio');
 const voiceName = document.getElementById('voiceName');
@@ -59,6 +60,7 @@ let currentPromptId = null;
 let MAX_FILES = 3;
 let lastGeneratedVideoUUID = null; // 마지막 생성된 비디오 UUID 저장
 let lastVideoResolution = null; // 마지막 생성된 비디오 해상도 저장
+let lastVideoModel = null; // 마지막 생성에 사용한 Veo 모델 저장
 let lastImageSessionId = null; // 마지막 이미지 생성 세션 ID (Multi-turn용)
 let isSettingsVisible = false;
 let lastOperationType = null;
@@ -73,7 +75,16 @@ let modelConfig = {
     standard_model_alias: 'Nano Banana 2',
     lite_model_alias: 'Nano Banana 2 Lite',
     pro_model_alias: 'Nano Banana Pro',
-    advanced_model_alias: 'Nano Banana Pro'
+    advanced_model_alias: 'Nano Banana Pro',
+    video_standard_model: 'veo-3.1-generate-preview',
+    video_fast_model: 'veo-3.1-fast-generate-preview',
+    video_lite_model: 'veo-3.1-lite-generate-preview',
+    video_default_model: 'veo-3.1-lite-generate-preview',
+    video_model_aliases: {
+        'veo-3.1-generate-preview': 'Veo 3.1 Standard Preview',
+        'veo-3.1-fast-generate-preview': 'Veo 3.1 Fast Preview',
+        'veo-3.1-lite-generate-preview': 'Veo 3.1 Lite Preview'
+    }
 };
 
 // 서버에서 모델 설정 로드
@@ -103,6 +114,17 @@ async function loadModelConfig() {
     advOpt.value = modelConfig.advanced_model;
     advOpt.textContent = modelConfig.advanced_model_alias;
     imageModelSelect.appendChild(advOpt);
+
+    // Veo 모델 옵션 업데이트. Lite를 기본값으로 사용한다.
+    videoModel.innerHTML = '';
+    [modelConfig.video_lite_model, modelConfig.video_standard_model, modelConfig.video_fast_model].forEach(model => {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = modelConfig.video_model_aliases[model] || model;
+        option.selected = model === modelConfig.video_default_model;
+        videoModel.appendChild(option);
+    });
+    updateVideoOptions();
 
     // laozhang 모드 사용 가능 여부 반영 (app_3rdparty.py에서만 true)
     laozhangAvailable = modelConfig.laozhang_available === true;
@@ -260,7 +282,35 @@ function updateMaxFiles() {
         fileInputCardTitle.innerHTML = `<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 ${MAX_FILES}장)`;
         log(`최대 파일 수 변경: ${MAX_FILES}장`);
     } else if (operation === 'image-to-video') {
-        MAX_FILES = 3;
+        MAX_FILES = videoModel.value === modelConfig.video_lite_model ? 1 : 3;
+        fileInputCardTitle.innerHTML = `<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 ${MAX_FILES}장)`;
+    }
+}
+
+// Veo 모델별 지원 해상도와 참조 이미지 개수를 반영한다.
+function updateVideoOptions() {
+    const previousResolution = videoResolution.value;
+    const isLite = videoModel.value === modelConfig.video_lite_model;
+    const resolutions = isLite ? ['720p', '1080p'] : ['720p', '1080p', '4k'];
+
+    videoResolution.innerHTML = '';
+    resolutions.forEach(resolution => {
+        const option = document.createElement('option');
+        option.value = resolution;
+        option.textContent = resolution === '4k' ? '4K' : resolution;
+        option.selected = resolutions.includes(previousResolution)
+            ? resolution === previousResolution
+            : resolution === '720p';
+        videoResolution.appendChild(option);
+    });
+
+    if (operationType.value === 'image-to-video') {
+        updateMaxFiles();
+        if (selectedFiles.length > MAX_FILES) {
+            selectedFiles = selectedFiles.slice(0, MAX_FILES);
+            updateImagePreview();
+            log(`선택한 Veo 모델의 제한에 따라 입력 이미지를 ${MAX_FILES}장으로 조정했습니다.`);
+        }
     }
 }
 
@@ -361,6 +411,7 @@ function updateUIForOperation() {
     // 비디오 확장 관련 초기화
     lastGeneratedVideoUUID = null;
     lastVideoResolution = null;
+    lastVideoModel = null;
     
     // 파일 입력 표시 여부
     if (operation === 'image-to-image' || operation === 'image-to-video') {
@@ -368,8 +419,7 @@ function updateUIForOperation() {
         if (operation === 'image-to-image') {
             updateMaxFiles();
         } else {
-            MAX_FILES = 3;
-            fileInputCardTitle.innerHTML = '<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 3장)';
+            updateMaxFiles();
         }
         dropZoneText.textContent = '여기에 파일을 드래그앤드롭하거나';
         fileInput.accept = 'image/*';
@@ -387,6 +437,9 @@ function updateUIForOperation() {
     
     // 해상도 옵션 표시 여부 업데이트
     updateResolutionVisibility();
+    if (operation === 'text-to-video' || operation === 'image-to-video') {
+        updateVideoOptions();
+    }
     
     // 세션 UI 업데이트
     updateSessionUI();
@@ -413,6 +466,8 @@ imageModel.addEventListener('change', () => {
         log(`파일 개수가 최대 제한을 초과하여 ${MAX_FILES}개로 조정되었습니다.`);
     }
 });
+
+videoModel.addEventListener('change', updateVideoOptions);
 
 // 파일 선택
 fileInput.addEventListener('change', (e) => {
@@ -496,10 +551,10 @@ async function executeOperation(isNew = false) {
                 result = await executeImageToImage(prompt, selectedFiles, imageModel.value, imageResolution.value, isNew);
                 break;
             case 'text-to-video':
-                result = await executeTextToVideo(prompt, videoResolution.value, videoAspectRatio.value);
+                result = await executeTextToVideo(prompt, videoModel.value, videoResolution.value, videoAspectRatio.value);
                 break;
             case 'image-to-video':
-                result = await executeImageToVideo(prompt, selectedFiles, videoResolution.value, videoAspectRatio.value);
+                result = await executeImageToVideo(prompt, selectedFiles, videoModel.value, videoResolution.value, videoAspectRatio.value);
                 break;
             case 'text-to-speech':
                 result = await executeTextToSpeech(prompt, voiceName.value);
@@ -651,11 +706,12 @@ async function executeImageToImage(prompt, files, model, resolution, isNew = tru
     return result;
 }
 
-async function executeTextToVideo(prompt, resolution, aspectRatio) {
+async function executeTextToVideo(prompt, model, resolution, aspectRatio) {
     log('비디오 생성 중... (시간이 다소 걸릴 수 있습니다)');
     
     const formData = new FormData();
     formData.append('prompt', prompt);
+    formData.append('model', model);
     formData.append('resolution', resolution);
     formData.append('aspect_ratio', aspectRatio);
     
@@ -684,7 +740,8 @@ async function executeTextToVideo(prompt, resolution, aspectRatio) {
         if (result.video_uuid) {
             lastGeneratedVideoUUID = result.video_uuid;
             lastVideoResolution = resolution;
-            log(`Saved video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
+            lastVideoModel = result.model || model;
+            log(`Saved video UUID: ${lastGeneratedVideoUUID}, model: ${lastVideoModel}, resolution: ${lastVideoResolution}`);
         } else {
             log(`No video_uuid in response`);
         }
@@ -696,11 +753,12 @@ async function executeTextToVideo(prompt, resolution, aspectRatio) {
     }
 }
 
-async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
+async function executeImageToVideo(prompt, files, model, resolution, aspectRatio) {
     log('비디오 생성 중... (시간이 다소 걸릴 수 있습니다)');
     
     const formData = new FormData();
     formData.append('prompt', prompt);
+    formData.append('model', model);
     
     // 멀티 파일 업로드
     files.forEach((file, index) => {
@@ -735,7 +793,8 @@ async function executeImageToVideo(prompt, files, resolution, aspectRatio) {
         if (result.video_uuid) {
             lastGeneratedVideoUUID = result.video_uuid;
             lastVideoResolution = resolution;
-            log(`Saved video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
+            lastVideoModel = result.model || model;
+            log(`Saved video UUID: ${lastGeneratedVideoUUID}, model: ${lastVideoModel}, resolution: ${lastVideoResolution}`);
         } else {
             log(`No video_uuid in response`);
         }
@@ -856,8 +915,10 @@ function displayResult(result, operation) {
         
         // 비디오 확장 기능 추가 (Text to Video, Image to Video인 경우)
         if (operation === 'text-to-video' || operation === 'image-to-video') {
-            // 720p인 경우만 확장 가능
-            if (lastVideoResolution === '720p') {
+            // Standard/Fast의 720p 비디오만 확장 가능
+            const canExtend = lastVideoResolution === '720p'
+                && lastVideoModel !== modelConfig.video_lite_model;
+            if (canExtend) {
                 content += `
                     <div class="card mt-3">
                         <div class="card-header bg-info text-white">
@@ -873,7 +934,10 @@ function displayResult(result, operation) {
                         </div>
                     </div>
                 `;
-            } else if (lastVideoResolution === '1080p') {
+            } else {
+                const reason = lastVideoModel === modelConfig.video_lite_model
+                    ? 'Veo 3.1 Lite는 비디오 확장을 지원하지 않습니다.'
+                    : `${lastVideoResolution} 비디오는 확장할 수 없습니다.`;
                 content += `
                     <div class="card mt-3">
                         <div class="card-header bg-warning text-dark">
@@ -881,9 +945,8 @@ function displayResult(result, operation) {
                         </div>
                         <div class="card-body">
                             <p class="text-muted small mb-0">
-                                <i class="bi bi-info-circle"></i> 비디오 확장은 <strong>720p 해상도</strong>로 생성된 비디오만 지원됩니다.<br>
-                                1080p로 생성된 비디오는 확장할 수 없습니다.<br>
-                                비디오를 확장하려면 <strong>720p 해상도</strong>로 다시 생성해주세요.
+                                <i class="bi bi-info-circle"></i> ${reason}<br>
+                                비디오 확장은 <strong>Veo 3.1 Standard 또는 Fast</strong> 모델의 <strong>720p 해상도</strong>만 지원합니다.
                             </p>
                         </div>
                     </div>
@@ -907,7 +970,10 @@ function displayResult(result, operation) {
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     
     // 비디오 확장 버튼 이벤트 리스너 추가 (720p인 경우만)
-    if (fileType === 'video' && (operation === 'text-to-video' || operation === 'image-to-video') && lastVideoResolution === '720p') {
+    if (fileType === 'video'
+        && (operation === 'text-to-video' || operation === 'image-to-video')
+        && lastVideoResolution === '720p'
+        && lastVideoModel !== modelConfig.video_lite_model) {
         const extendBtn = document.getElementById('extendVideoBtn');
         if (extendBtn) {
             extendBtn.addEventListener('click', handleVideoExtension);
