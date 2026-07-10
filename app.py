@@ -113,26 +113,12 @@ def compute_asset_version() -> str:
 ASSET_VERSION = compute_asset_version()
 logger.info(f"Asset version for cache-busting: {ASSET_VERSION}")
 
-# API 키 리스트 초기화
-# GEMINI_API_KEY_LIST에서 키 목록 로드
-api_key_list_str = os.getenv("GEMINI_API_KEY_LIST")
-if api_key_list_str:
-    # 공백으로 분리하여 리스트로 변환
-    api_key_list = api_key_list_str.split()
-    if not api_key_list:
-        logger.error("GEMINI_API_KEY_LIST is empty")
-        raise ValueError("GEMINI_API_KEY_LIST is empty")
-    logger.info(f"Loaded {len(api_key_list)} API keys from GEMINI_API_KEY_LIST")
-else:
-    # fallback: GEMINI_API_KEY 사용
-    single_api_key = os.getenv("GEMINI_API_KEY")
-    if not single_api_key:
-        logger.error("GEMINI_API_KEY or GEMINI_API_KEY_LIST not found in environment variables")
-        raise ValueError("GEMINI_API_KEY or GEMINI_API_KEY_LIST not found in environment variables")
-    api_key_list = [single_api_key]
-    logger.info("Using single GEMINI_API_KEY")
-
-logger.info("API keys loaded successfully")
+# Gemini API 키 초기화
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+if not gemini_api_key:
+    logger.error("GEMINI_API_KEY not found in environment variables")
+    raise ValueError("GEMINI_API_KEY not found in environment variables")
+logger.info("GEMINI_API_KEY loaded successfully")
 
 # 환경변수에서 API 키 제거 (SDK 내부 경고 방지 - 명시적으로 키를 전달하므로 불필요)
 os.environ.pop("GOOGLE_API_KEY", None)
@@ -359,12 +345,8 @@ def laozhang_generate_image(
 
 
 def get_genai_client() -> genai.Client:
-    """매 요청마다 랜덤 API 키를 선택하여 새 클라이언트 생성"""
-    selected_key = random.choice(api_key_list)
-    # 키의 앞 8자만 표시 (보안)
-    masked_key = selected_key[:8] + "..." if len(selected_key) > 8 else selected_key
-    logger.info(f"Selected API key: {masked_key} (from {len(api_key_list)} keys)")
-    return genai.Client(api_key=selected_key)
+    """GEMINI_API_KEY로 GenAI 클라이언트를 생성한다."""
+    return genai.Client(api_key=gemini_api_key)
 
 
 def validate_veo_options(model: str, resolution: str) -> None:
@@ -441,7 +423,8 @@ def start_video_job(operation) -> str:
     return job_id
 
 # 이미지 채팅 세션 저장소 (메모리)
-# session_id -> {"chat": chat, "client": client} 매핑
+# Gemini 세션은 interaction을 생성한 API 키에 종속되므로 같은 client를 계속 사용한다.
+# session_id -> {"interaction_id": str, "client": client, "model": str} 매핑
 image_chat_sessions = {}
 
 # 로그인 설정
@@ -660,8 +643,8 @@ def generate_image_via_interaction(
         body["generation_config"] = {"image_config": image_config}
 
     # 편집(이어가기) 턴은 preview 단계 Interactions API에서 간헐적으로
-    # thought_signature(400) 또는 not_found(404) 오류가 발생할 수 있어 짧은 백오프로 재시도한다.
-    # (문서상 stateful 모드에선 서버가 signature를 관리하나 preview라 이따금 실패함)
+    # thought_signature 오류가 발생할 수 있어 짧은 백오프로 재시도한다.
+    # not_found는 API 키 불일치 또는 만료된 interaction을 뜻하므로 재시도하지 않는다.
     is_continuation = previous_interaction_id is not None
     max_attempts = 3 if is_continuation else 1
     interaction = None
@@ -671,7 +654,7 @@ def generate_image_via_interaction(
             break
         except Exception as exc:
             message = str(exc)
-            transient = ("thought_signature" in message) or ("not found" in message.lower())
+            transient = "thought_signature" in message
             if is_continuation and transient and attempt < max_attempts - 1:
                 logger.warning(
                     f"Transient interaction error on edit turn "
@@ -1301,16 +1284,20 @@ async def text_to_image(
         if provider == "laozhang":
             return await _text_to_image_laozhang(prompt, aspect_ratio, model, resolution, is_new, session_id)
 
-        client = get_genai_client()
-
         # Multi-turn 모드: 이전 interaction ID를 이어받아 서버 사이드 상태로 편집
         previous_interaction_id: Optional[str] = None
         continue_session = not is_new and session_id and session_id in image_chat_sessions
         if continue_session:
-            previous_interaction_id = image_chat_sessions[session_id].get("interaction_id")
+            session = image_chat_sessions[session_id]
+            previous_interaction_id = session.get("interaction_id")
             if not previous_interaction_id:
                 raise HTTPException(status_code=400, detail="편집할 이전 세션 정보가 없습니다.")
+            client = session.get("client")
+            if client is None:
+                raise HTTPException(status_code=409, detail="이전 세션을 이어갈 수 없습니다. 새로 만들기를 선택해 주세요.")
             logger.info(f"Continuing interaction: {previous_interaction_id} (session: {session_id})")
+        else:
+            client = get_genai_client()
 
         logger.info("Calling Interactions API...")
         interaction_id, image_bytes, mime_type, text_response = generate_image_via_interaction(
@@ -1330,6 +1317,7 @@ async def text_to_image(
         # 다음 턴을 위해 최신 interaction ID 저장
         image_chat_sessions[current_session_id] = {
             "interaction_id": interaction_id,
+            "client": client,
             "model": model,
         }
 
@@ -1390,17 +1378,19 @@ async def image_to_image(
         if provider == "laozhang":
             return await _image_to_image_laozhang(prompt, files, model, resolution, is_new, session_id)
 
-        client = get_genai_client()
-
         previous_interaction_id: Optional[str] = None
         input_images: Optional[list[tuple[bytes, str]]] = None
         continue_session = not is_new and session_id and session_id in image_chat_sessions
 
         if continue_session:
             # Multi-turn 편집: 서버 사이드 상태를 이어받음 (이전 이미지 재전송 불필요)
-            previous_interaction_id = image_chat_sessions[session_id].get("interaction_id")
+            session = image_chat_sessions[session_id]
+            previous_interaction_id = session.get("interaction_id")
             if not previous_interaction_id:
                 raise HTTPException(status_code=400, detail="편집할 이전 세션 정보가 없습니다.")
+            client = session.get("client")
+            if client is None:
+                raise HTTPException(status_code=409, detail="이전 세션을 이어갈 수 없습니다. 새로 만들기를 선택해 주세요.")
             # 편집 중 추가 참조 이미지를 올린 경우 함께 전달
             if files:
                 input_images = await read_upload_images(files[:14])
@@ -1413,6 +1403,7 @@ async def image_to_image(
             files_to_process = files[:14]
             logger.info(f"Processing {len(files_to_process)} images for image-to-image with model {model}")
             input_images = await read_upload_images(files_to_process)
+            client = get_genai_client()
 
         logger.info("Calling Interactions API...")
         interaction_id, image_bytes, mime_type, text_response = generate_image_via_interaction(
@@ -1431,6 +1422,7 @@ async def image_to_image(
         # 다음 턴을 위해 최신 interaction ID 저장
         image_chat_sessions[current_session_id] = {
             "interaction_id": interaction_id,
+            "client": client,
             "model": model,
         }
 

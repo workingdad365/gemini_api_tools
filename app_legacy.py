@@ -5,7 +5,6 @@ import mimetypes
 import struct
 import logging
 import traceback
-import random
 import uuid
 from datetime import datetime
 from io import BytesIO
@@ -79,26 +78,12 @@ DB_PATH = BASE_DIR / "data.db"  # 웹앱 전용 데이터베이스
 UPLOADS_DIR.mkdir(exist_ok=True)
 OUTPUTS_DIR.mkdir(exist_ok=True)
 
-# API 키 리스트 초기화
-# GEMINI_API_KEY_LIST에서 키 목록 로드
-api_key_list_str = os.getenv("GEMINI_API_KEY_LIST")
-if api_key_list_str:
-    # 공백으로 분리하여 리스트로 변환
-    api_key_list = api_key_list_str.split()
-    if not api_key_list:
-        logger.error("GEMINI_API_KEY_LIST is empty")
-        raise ValueError("GEMINI_API_KEY_LIST is empty")
-    logger.info(f"Loaded {len(api_key_list)} API keys from GEMINI_API_KEY_LIST")
-else:
-    # fallback: GEMINI_API_KEY 사용
-    single_api_key = os.getenv("GEMINI_API_KEY")
-    if not single_api_key:
-        logger.error("GEMINI_API_KEY or GEMINI_API_KEY_LIST not found in environment variables")
-        raise ValueError("GEMINI_API_KEY or GEMINI_API_KEY_LIST not found in environment variables")
-    api_key_list = [single_api_key]
-    logger.info("Using single GEMINI_API_KEY")
-
-logger.info("API keys loaded successfully")
+# Gemini API 키 초기화
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+if not gemini_api_key:
+    logger.error("GEMINI_API_KEY not found in environment variables")
+    raise ValueError("GEMINI_API_KEY not found in environment variables")
+logger.info("GEMINI_API_KEY loaded successfully")
 
 # 환경변수에서 API 키 제거 (SDK 내부 경고 방지 - 명시적으로 키를 전달하므로 불필요)
 os.environ.pop("GOOGLE_API_KEY", None)
@@ -116,12 +101,8 @@ PRO_MODEL_ALIAS = ADVANCED_MODEL_ALIAS
 logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS}), LITE: {LITE_MODEL} ({LITE_MODEL_ALIAS}), ADVANCED: {ADVANCED_MODEL} ({ADVANCED_MODEL_ALIAS})")
 
 def get_genai_client() -> genai.Client:
-    """매 요청마다 랜덤 API 키를 선택하여 새 클라이언트 생성"""
-    selected_key = random.choice(api_key_list)
-    # 키의 앞 8자만 표시 (보안)
-    masked_key = selected_key[:8] + "..." if len(selected_key) > 8 else selected_key
-    logger.info(f"Selected API key: {masked_key} (from {len(api_key_list)} keys)")
-    return genai.Client(api_key=selected_key)
+    """GEMINI_API_KEY로 GenAI 클라이언트를 생성한다."""
+    return genai.Client(api_key=gemini_api_key)
 
 # 비디오 객체 저장소 (메모리)
 # UUID -> generated_video 객체 매핑
