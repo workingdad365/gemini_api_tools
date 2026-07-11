@@ -49,22 +49,15 @@ logger = logging.getLogger(__name__)
 # 디렉토리 설정
 BASE_DIR = Path(__file__).resolve().parent
 
-# 환경 변수 로드
-load_dotenv()
-
-# 앱 루트의 .env 파일 로드
+# 앱 루트의 .env 파일만 로드한다. 서비스 프로세스에 남아 있는 기존 환경 변수보다
+# 현재 .env 값을 우선하여 배포 후 키 변경 사항이 확실히 반영되도록 한다.
 app_env_path = BASE_DIR / ".env"
 if app_env_path.exists():
-    load_dotenv(app_env_path)
+    load_dotenv(app_env_path, override=True)
     logger.info(f"Loaded .env from {app_env_path}")
 else:
-    logger.warning(f".env file not found at {app_env_path}")
-
-# 루트 디렉토리의 .env 파일도 로드 (fallback)
-root_env_path = BASE_DIR.parent / ".env"
-if root_env_path.exists():
-    load_dotenv(root_env_path)
-    logger.info(f"Loaded .env from {root_env_path}")
+    logger.error(f".env file not found at {app_env_path}")
+    raise FileNotFoundError(f".env file not found at {app_env_path}")
 
 app = FastAPI(title="Google Gemini API Tools")
 
@@ -114,10 +107,13 @@ ASSET_VERSION = compute_asset_version()
 logger.info(f"Asset version for cache-busting: {ASSET_VERSION}")
 
 # Gemini API 키 초기화
-gemini_api_key = os.getenv("GEMINI_API_KEY")
+gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
 if not gemini_api_key:
     logger.error("GEMINI_API_KEY not found in environment variables")
     raise ValueError("GEMINI_API_KEY not found in environment variables")
+if any(character.isspace() for character in gemini_api_key):
+    logger.error("GEMINI_API_KEY contains whitespace")
+    raise ValueError("GEMINI_API_KEY must contain exactly one API key without whitespace")
 logger.info("GEMINI_API_KEY loaded successfully")
 
 # 환경변수에서 API 키 제거 (SDK 내부 경고 방지 - 명시적으로 키를 전달하므로 불필요)
@@ -347,6 +343,21 @@ def laozhang_generate_image(
 def get_genai_client() -> genai.Client:
     """GEMINI_API_KEY로 GenAI 클라이언트를 생성한다."""
     return genai.Client(api_key=gemini_api_key)
+
+
+def get_genai_error_detail(exc: Exception) -> tuple[int, str]:
+    """GenAI SDK 예외를 웹 UI에 표시할 HTTP 상태와 메시지로 변환한다.
+
+    Args:
+        exc: Google GenAI SDK 호출 중 발생한 예외.
+
+    Returns:
+        HTTP 상태 코드와 사용자에게 표시할 오류 메시지 튜플.
+    """
+    message = str(exc)
+    if "API_KEY_INVALID" in message or "API key not valid" in message:
+        return 401, "API key not valid. Please pass a valid API key."
+    return 500, message
 
 
 def validate_veo_options(model: str, resolution: str) -> None:
@@ -1352,7 +1363,8 @@ async def text_to_image(
     except Exception as e:
         logger.error(f"Text to Image error: {str(e)}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        status_code, detail = get_genai_error_detail(e)
+        raise HTTPException(status_code=status_code, detail=detail)
 
 @app.post("/api/image-to-image")
 async def image_to_image(
@@ -1457,7 +1469,8 @@ async def image_to_image(
     except Exception as e:
         logger.error(f"Image to Image error: {str(e)}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        status_code, detail = get_genai_error_detail(e)
+        raise HTTPException(status_code=status_code, detail=detail)
 
 @app.post("/api/text-to-video")
 async def text_to_video(

@@ -643,15 +643,7 @@ async function executeTextToImage(prompt, aspectRatio, model, resolution, isNew 
         body: formData
     });
     
-    let result;
-    try {
-        result = await response.json();
-    } catch (error) {
-        const text = await response.text();
-        const parseError = new Error('작업 실패: 응답 형식이 JSON이 아닙니다.');
-        parseError.details = text || error.message;
-        throw parseError;
-    }
+    const result = await readJsonResponse(response);
     
     if (!response.ok) {
         const error = new Error(result.detail || '작업 실패');
@@ -687,15 +679,7 @@ async function executeImageToImage(prompt, files, model, resolution, isNew = tru
         body: formData
     });
     
-    let result;
-    try {
-        result = await response.json();
-    } catch (error) {
-        const text = await response.text();
-        const parseError = new Error('작업 실패: 응답 형식이 JSON이 아닙니다.');
-        parseError.details = text || error.message;
-        throw parseError;
-    }
+    const result = await readJsonResponse(response);
     
     if (!response.ok) {
         const error = new Error(result.detail || '작업 실패');
@@ -828,7 +812,9 @@ async function readJsonResponse(response) {
         return JSON.parse(text);
     } catch (error) {
         const contentType = response.headers.get('content-type') || '알 수 없음';
-        throw new Error(`서버가 JSON 대신 ${contentType} 응답을 반환했습니다. HTTP ${response.status}`);
+        const responseError = new Error(`서버가 JSON 대신 ${contentType} 응답을 반환했습니다. HTTP ${response.status}`);
+        responseError.details = text || responseError.message;
+        throw responseError;
     }
 }
 
