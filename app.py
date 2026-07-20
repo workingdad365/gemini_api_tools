@@ -23,7 +23,7 @@ import secrets
 import hashlib
 from collections import defaultdict
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, Response, Cookie, Depends
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, Response, Cookie, Depends, Query
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -692,6 +692,21 @@ THUMBNAIL_SUFFIX = ".thumb"  # 썸네일 파일 접미사 (예: output_xxx.png -
 THUMBNAIL_MAX_SIZE = 320  # 썸네일 최대 변(px)
 
 
+class GalleryCache(BaseModel):
+    """프로세스 내 갤러리 파일 인덱스 캐시 상태."""
+
+    directory_mtime_ns: Optional[int] = None
+    images: list[dict] = []
+
+
+GALLERY_CACHE = GalleryCache()
+
+
+def invalidate_gallery_cache() -> None:
+    """다음 갤러리 조회에서 파일 인덱스를 다시 생성하도록 캐시를 무효화한다."""
+    GALLERY_CACHE.directory_mtime_ns = None
+
+
 def create_thumbnail(original_path: Path, image_bytes: bytes) -> Optional[Path]:
     """원본 이미지에 대한 축소 썸네일(PNG)을 생성하여 저장한다.
 
@@ -712,6 +727,7 @@ def create_thumbnail(original_path: Path, image_bytes: bytes) -> Optional[Path]:
             img = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")
             img.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE))
             img.save(thumb_path, format="PNG")
+        invalidate_gallery_cache()
         logger.info(f"Thumbnail created: {thumb_path.name}")
         return thumb_path
     except (OSError, ValueError) as exc:
@@ -1063,18 +1079,12 @@ async def get_config():
         "laozhang_available": LAOZHANG_AVAILABLE,
     })
 
-# 출력 이미지 갤러리 API
-@app.get("/api/gallery")
-async def get_gallery():
-    """썸네일이 존재하는 출력 이미지 목록을 최신순으로 반환한다.
+def get_gallery_images() -> list[dict]:
+    """갤러리 파일 인덱스를 디렉터리 변경 시에만 다시 생성하여 반환한다."""
+    directory_mtime_ns = OUTPUTS_DIR.stat().st_mtime_ns
+    if GALLERY_CACHE.directory_mtime_ns == directory_mtime_ns:
+        return GALLERY_CACHE.images
 
-    썸네일(.thumb)이 있는 파일만 대상으로 하므로, 썸네일 도입 이전에 생성된
-    과거 이미지는 목록에 포함되지 않는다.
-
-    Returns:
-        {"images": [{filename, thumb_url, original_url, mtime}, ...]} 형태의 JSON.
-        mtime 내림차순(최신이 먼저)으로 정렬된다.
-    """
     images = []
     for thumb_path in OUTPUTS_DIR.glob(f"*{THUMBNAIL_SUFFIX}"):
         # 썸네일명 output_xxx.png.thumb -> 원본명 output_xxx.png
@@ -1088,7 +1098,38 @@ async def get_gallery():
             "mtime": original_path.stat().st_mtime,
         })
     images.sort(key=lambda item: item["mtime"], reverse=True)
-    return JSONResponse({"images": images})
+    GALLERY_CACHE.images = images
+    GALLERY_CACHE.directory_mtime_ns = directory_mtime_ns
+    return GALLERY_CACHE.images
+
+
+# 출력 이미지 갤러리 API
+@app.get("/api/gallery")
+async def get_gallery(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=30, ge=1, le=100),
+):
+    """썸네일이 존재하는 출력 이미지 목록을 최신순으로 나누어 반환한다.
+
+    썸네일(.thumb)이 있는 파일만 대상으로 하므로, 썸네일 도입 이전에 생성된
+    과거 이미지는 목록에 포함되지 않는다.
+
+    Args:
+        offset: 최신 이미지부터 건너뛸 항목 수.
+        limit: 한 번에 반환할 항목 수. 최대 100개로 제한한다.
+
+    Returns:
+        images, next_offset, has_more를 포함하는 JSON. images는 mtime
+        내림차순(최신이 먼저)으로 정렬된다.
+    """
+    images = get_gallery_images()
+    page = images[offset:offset + limit]
+    next_offset = offset + len(page)
+    return JSONResponse({
+        "images": page,
+        "next_offset": next_offset,
+        "has_more": next_offset < len(images),
+    })
 
 
 def _resolve_output_path(filename: str) -> Path:
@@ -1139,6 +1180,7 @@ async def delete_output(filename: str):
     if not deleted_any:
         raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.")
 
+    invalidate_gallery_cache()
     return JSONResponse({"status": "success", "message": "이미지가 삭제되었습니다."})
 
 

@@ -54,6 +54,11 @@ const viewerDownloadBtn = document.getElementById('viewerDownloadBtn');
 
 // 현재 뷰어에 표시 중인 이미지 정보
 let currentViewerImage = null;
+const GALLERY_PAGE_SIZE = 30;
+let galleryOffset = 0;
+let galleryHasMore = true;
+let galleryLoading = false;
+let galleryLoadController = null;
 
 let selectedFiles = [];
 let currentPromptId = null;
@@ -578,7 +583,7 @@ async function executeOperation(isNew = false) {
 
             // 이미지가 생성된 경우 갤러리 갱신
             if ((operation === 'text-to-image' || operation === 'image-to-image') && result.output_file) {
-                loadGallery();
+                loadGallery(true);
             }
         } else {
             throw new Error('작업 실패');
@@ -1130,24 +1135,55 @@ function initGalleryVisibility() {
 }
 
 // 갤러리 목록 로드 및 렌더링
-async function loadGallery() {
+async function loadGallery(reset = false) {
+    if (reset) {
+        galleryLoadController?.abort();
+        galleryLoadController = null;
+        galleryLoading = false;
+        galleryOffset = 0;
+        galleryHasMore = true;
+        galleryThumbs.innerHTML = '';
+    }
+    if (galleryLoading || !galleryHasMore) {
+        return;
+    }
+
+    const requestOffset = galleryOffset;
+    const controller = new AbortController();
+    galleryLoadController = controller;
+    galleryLoading = true;
+
     try {
-        const response = await fetch('/api/gallery');
+        const params = new URLSearchParams({
+            offset: requestOffset.toString(),
+            limit: GALLERY_PAGE_SIZE.toString()
+        });
+        const response = await fetch(`/api/gallery?${params}`, { signal: controller.signal });
         if (!response.ok) {
             return;
         }
         const data = await response.json();
-        renderGallery(data.images || []);
+        const images = data.images || [];
+        renderGallery(images, requestOffset === 0);
+        galleryOffset = Number.isInteger(data.next_offset)
+            ? data.next_offset
+            : requestOffset + images.length;
+        galleryHasMore = data.has_more === true;
     } catch (error) {
-        log('갤러리 로드 실패');
+        if (error.name !== 'AbortError') {
+            log('갤러리 로드 실패');
+        }
+    } finally {
+        if (galleryLoadController === controller) {
+            galleryLoadController = null;
+            galleryLoading = false;
+        }
     }
 }
 
 // 썸네일 렌더링
-function renderGallery(images) {
-    galleryThumbs.innerHTML = '';
-
-    if (!images || images.length === 0) {
+function renderGallery(images, isFirstPage) {
+    if (isFirstPage && images.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'text-muted small text-center p-3';
         empty.textContent = '아직 생성된 이미지가 없습니다.';
@@ -1157,8 +1193,12 @@ function renderGallery(images) {
 
     images.forEach(img => {
         const item = document.createElement('div');
+        const thumbnail = document.createElement('img');
         item.className = 'gallery-thumb-item';
-        item.innerHTML = `<img src="${img.thumb_url}" alt="${img.filename}" loading="lazy">`;
+        thumbnail.src = img.thumb_url;
+        thumbnail.alt = img.filename;
+        thumbnail.loading = 'lazy';
+        item.appendChild(thumbnail);
         item.addEventListener('click', () => openImageViewer(img));
         galleryThumbs.appendChild(item);
     });
@@ -1228,7 +1268,7 @@ async function deleteViewerImage() {
         imageViewerModal.hide();
         log(`이미지 삭제됨: ${filename}`);
         currentViewerImage = null;
-        await loadGallery();
+        await loadGallery(true);
     } catch (error) {
         logError(`이미지 삭제 실패: ${error.message}`);
         alert('이미지 삭제 중 오류가 발생했습니다.');
@@ -1239,6 +1279,14 @@ async function deleteViewerImage() {
 galleryToggleBtn.addEventListener('click', toggleGallery);
 galleryCloseBtn.addEventListener('click', toggleGallery);
 galleryBackdrop.addEventListener('click', toggleGallery);
+galleryThumbs.addEventListener('scroll', () => {
+    const remainingScroll = galleryThumbs.scrollHeight
+        - galleryThumbs.scrollTop
+        - galleryThumbs.clientHeight;
+    if (remainingScroll < 400) {
+        loadGallery();
+    }
+});
 viewerEditImageBtn.addEventListener('click', () => editViewerImage('image-to-image'));
 viewerEditVideoBtn.addEventListener('click', () => editViewerImage('image-to-video'));
 viewerDeleteBtn.addEventListener('click', deleteViewerImage);
@@ -1248,7 +1296,7 @@ initGalleryVisibility();
 loadModelConfig().then(() => {
     updateUIForOperation();
 });
-loadGallery();
+loadGallery(true);
 
 // Bootstrap 툴팁 초기화 (호버 가능한 데스크탑 환경에서만)
 // 터치 기기에서는 hover에 대응하는 mouseleave가 없어 툴팁이 사라지지 않으므로 비활성화한다.
