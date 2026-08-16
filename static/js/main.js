@@ -9,8 +9,6 @@ const fileInputHint = document.getElementById('fileInputHint');
 const selectedFileName = document.getElementById('selectedFileName');
 const imageModelGroup = document.getElementById('imageModelGroup');
 const imageModel = document.getElementById('imageModel');
-const laozhangModeGroup = document.getElementById('laozhangModeGroup');
-const laozhangMode = document.getElementById('laozhangMode');
 const imageResolutionGroup = document.getElementById('imageResolutionGroup');
 const imageResolution = document.getElementById('imageResolution');
 const imageRatioGroup = document.getElementById('imageRatioGroup');
@@ -37,6 +35,10 @@ const imagePreviewContainer = document.getElementById('imagePreviewContainer');
 const newSessionBtn = document.getElementById('newSessionBtn');
 const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
 const settingsBody = document.getElementById('settingsBody');
+const pricingSummary = document.getElementById('pricingSummary');
+const pricingValue = document.getElementById('pricingValue');
+const pricingDetail = document.getElementById('pricingDetail');
+const pricingSourceLink = document.getElementById('pricingSourceLink');
 
 // 갤러리 관련 DOM 요소
 const appLayout = document.getElementById('appLayout');
@@ -69,7 +71,6 @@ let lastVideoModel = null; // 마지막 생성에 사용한 Veo 모델 저장
 let lastImageSessionId = null; // 마지막 이미지 생성 세션 ID (Multi-turn용)
 let isSettingsVisible = false;
 let lastOperationType = null;
-let laozhangAvailable = false; // 서버에 laozhang 키가 설정되어 있으면 true (체크박스 노출 조건)
 
 // 모델 설정 (서버에서 로드)
 let modelConfig = {
@@ -89,6 +90,26 @@ let modelConfig = {
         'veo-3.1-generate-preview': 'Veo 3.1 Standard Preview',
         'veo-3.1-fast-generate-preview': 'Veo 3.1 Fast Preview',
         'veo-3.1-lite-generate-preview': 'Veo 3.1 Lite Preview'
+    },
+    pricing: {
+        image_output: {
+            'gemini-3.1-flash-image': {'0.5K': 0.045, '1K': 0.067, '2K': 0.101, '4K': 0.151},
+            'gemini-3.1-flash-lite-image': {'1K': 0.0336},
+            'gemini-3-pro-image': {'1K': 0.134, '2K': 0.134, '4K': 0.24}
+        },
+        video_per_second: {
+            'veo-3.1-generate-preview': {'720p': 0.40, '1080p': 0.40, '4k': 0.60},
+            'veo-3.1-fast-generate-preview': {'720p': 0.10, '1080p': 0.12, '4k': 0.30},
+            'veo-3.1-lite-generate-preview': {'720p': 0.05, '1080p': 0.08}
+        },
+        tts: {
+            model: 'gemini-2.5-pro-preview-tts',
+            input_per_million_tokens: 1.00,
+            output_per_million_tokens: 20.00,
+            audio_tokens_per_second: 25
+        },
+        updated_at: '2026-08-11',
+        source_url: 'https://ai.google.dev/gemini-api/docs/pricing'
     }
 };
 
@@ -130,13 +151,51 @@ async function loadModelConfig() {
         videoModel.appendChild(option);
     });
     updateVideoOptions();
+    pricingSourceLink.href = modelConfig.pricing.source_url;
+}
 
-    // laozhang 모드 사용 가능 여부 반영 (app_3rdparty.py에서만 true)
-    laozhangAvailable = modelConfig.laozhang_available === true;
-    if (laozhangAvailable) {
-        log('laozhang 모드 사용 가능');
+function formatUsd(amount) {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4
+    }).format(amount);
+}
+
+function updateEstimatedCost() {
+    const operation = operationType.value;
+    const pricing = modelConfig.pricing;
+    pricingSummary.style.display = 'block';
+
+    if (operation === 'text-to-image' || operation === 'image-to-image') {
+        const price = pricing.image_output[imageModel.value]?.[imageResolution.value];
+        pricingValue.textContent = price === undefined ? '가격 정보 없음' : `${formatUsd(price)} / 장`;
+        pricingDetail.textContent = `출력 이미지 1장 기준 · 입력 텍스트와 참조 이미지는 별도 과금 · ${pricing.updated_at} 기준`;
+        return;
     }
-    updateLaozhangModeVisibility();
+
+    if (operation === 'text-to-video' || operation === 'image-to-video') {
+        const perSecond = pricing.video_per_second[videoModel.value]?.[videoResolution.value];
+        pricingValue.textContent = perSecond === undefined
+            ? '가격 정보 없음'
+            : `${formatUsd(perSecond * 8)} / 8초`;
+        pricingDetail.textContent = perSecond === undefined
+            ? `${pricing.updated_at} 기준`
+            : `${formatUsd(perSecond)} / 초 · 오디오 포함 · 생성된 동영상만 과금 · ${pricing.updated_at} 기준`;
+        return;
+    }
+
+    if (operation === 'text-to-speech') {
+        const tts = pricing.tts;
+        const outputPerMinute = tts.output_per_million_tokens
+            * tts.audio_tokens_per_second * 60 / 1_000_000;
+        pricingValue.textContent = `${formatUsd(outputPerMinute)} / 출력 1분`;
+        pricingDetail.textContent = `${tts.model} · 출력 ${tts.audio_tokens_per_second} 토큰/초 · 입력 텍스트 ${formatUsd(tts.input_per_million_tokens)} / 100만 토큰 · ${pricing.updated_at} 기준`;
+        return;
+    }
+
+    pricingSummary.style.display = 'none';
 }
 
 // 로그 추가 함수
@@ -317,6 +376,7 @@ function updateVideoOptions() {
             log(`선택한 Veo 모델의 제한에 따라 입력 이미지를 ${MAX_FILES}장으로 조정했습니다.`);
         }
     }
+    updateEstimatedCost();
 }
 
 // 모델에 따른 해상도 옵션 표시/숨김 및 옵션 업데이트
@@ -388,16 +448,10 @@ function updateResolutionVisibility() {
             : r.v === defaultRatio;
         aspectRatio.appendChild(opt);
     });
+    updateEstimatedCost();
 }
 
 // 작업 유형에 따른 UI 업데이트 함수
-// laozhang 체크박스 노출 여부 갱신 (laozhang 사용 가능 + 이미지 모드일 때만)
-function updateLaozhangModeVisibility() {
-    const operation = operationType.value;
-    const isImageOperation = (operation === 'text-to-image' || operation === 'image-to-image');
-    laozhangModeGroup.style.display = (laozhangAvailable && isImageOperation) ? 'block' : 'none';
-}
-
 function updateUIForOperation() {
     const operation = operationType.value;
 
@@ -435,7 +489,6 @@ function updateUIForOperation() {
     
     // 설정 표시 여부
     imageModelGroup.style.display = (operation === 'text-to-image' || operation === 'image-to-image') ? 'block' : 'none';
-    updateLaozhangModeVisibility();
     imageRatioGroup.style.display = operation === 'text-to-image' ? 'block' : 'none';
     videoSettingsGroup.style.display = (operation === 'text-to-video' || operation === 'image-to-video') ? 'block' : 'none';
     voiceSettingsGroup.style.display = operation === 'text-to-speech' ? 'block' : 'none';
@@ -448,17 +501,11 @@ function updateUIForOperation() {
     
     // 세션 UI 업데이트
     updateSessionUI();
+    updateEstimatedCost();
 }
 
 // 작업 유형 변경 시
 operationType.addEventListener('change', updateUIForOperation);
-
-// laozhang 모드 토글 시: provider가 바뀌면 세션 상태가 호환되지 않으므로 세션 초기화
-laozhangMode.addEventListener('change', () => {
-    lastImageSessionId = null;
-    updateSessionUI();
-    log(`laozhang 모드 ${laozhangMode.checked ? '켜짐' : '꺼짐'} (세션 초기화)`);
-});
 
 // 이미지 모델 변경 시
 imageModel.addEventListener('change', () => {
@@ -473,6 +520,8 @@ imageModel.addEventListener('change', () => {
 });
 
 videoModel.addEventListener('change', updateVideoOptions);
+videoResolution.addEventListener('change', updateEstimatedCost);
+imageResolution.addEventListener('change', updateEstimatedCost);
 
 // 파일 선택
 fileInput.addEventListener('change', (e) => {
@@ -634,8 +683,6 @@ async function executeTextToImage(prompt, aspectRatio, model, resolution, isNew 
     formData.append('model', model);
     formData.append('resolution', resolution);
     formData.append('is_new', isNew);
-    // provider: laozhang 모드 여부에 따라 백엔드 경로 선택 (기본 gemini)
-    formData.append('provider', laozhangMode.checked ? 'laozhang' : 'gemini');
 
     // Multi-turn 모드: 세션 ID 전달
     if (!isNew && lastImageSessionId) {
@@ -665,8 +712,6 @@ async function executeImageToImage(prompt, files, model, resolution, isNew = tru
     formData.append('model', model);
     formData.append('resolution', resolution);
     formData.append('is_new', isNew);
-    // provider: laozhang 모드 여부에 따라 백엔드 경로 선택 (기본 gemini)
-    formData.append('provider', laozhangMode.checked ? 'laozhang' : 'gemini');
 
     // Multi-turn 모드: 세션 ID 전달 (파일은 전송하지 않음)
     if (!isNew && lastImageSessionId) {
