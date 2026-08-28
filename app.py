@@ -194,6 +194,100 @@ def get_genai_error_detail(exc: Exception) -> tuple[int, str]:
     return 500, message
 
 
+def is_transient_genai_error(exc: Exception) -> bool:
+    """GenAI 요청을 재시도해도 되는 일시적인 전송/서버 오류인지 확인한다."""
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    message = str(exc).lower()
+    transient_markers = (
+        "server disconnected",
+        "connection reset",
+        "connection aborted",
+        "remote protocol error",
+        "timeout",
+        "timed out",
+        "temporarily unavailable",
+        "service unavailable",
+        " 502",
+        " 503",
+        " 504",
+    )
+    return any(marker in message for marker in transient_markers)
+
+
+def call_with_transient_retry(label: str, function, max_attempts: int = 5):
+    """멱등적인 동기 GenAI 조회를 일시적인 전송 오류에 재시도한다."""
+    for attempt in range(max_attempts):
+        try:
+            return function()
+        except Exception as exc:
+            if not is_transient_genai_error(exc) or attempt == max_attempts - 1:
+                raise
+            retry_delay = min(2 ** attempt, 15)
+            logger.warning(
+                "Transient %s error (attempt %s/%s, retrying in %ss): %s",
+                label,
+                attempt + 1,
+                max_attempts,
+                retry_delay,
+                str(exc)[:160],
+            )
+            time.sleep(retry_delay)
+    raise RuntimeError(f"{label} 재시도 횟수를 초과했습니다.")
+
+
+async def wait_for_video_operation(client, operation, poll_interval: float = 10) -> object:
+    """장기 실행 비디오 operation을 일시적인 조회 오류에 복원력 있게 대기한다."""
+    max_attempts = 5
+    operation_name = getattr(operation, "name", "unknown")
+    logger.info("Waiting for video operation: %s", operation_name)
+    while not operation.done:
+        await asyncio.sleep(poll_interval)
+        for attempt in range(max_attempts):
+            try:
+                operation = client.operations.get(operation)
+                break
+            except Exception as exc:
+                if not is_transient_genai_error(exc) or attempt == max_attempts - 1:
+                    raise
+                retry_delay = min(2 ** attempt, 15)
+                logger.warning(
+                    "Transient video operation polling error "
+                    "(attempt %s/%s, retrying in %ss): %s",
+                    attempt + 1,
+                    max_attempts,
+                    retry_delay,
+                    str(exc)[:160],
+                )
+                await asyncio.sleep(retry_delay)
+    logger.info("Video operation completed: %s", operation_name)
+    return operation
+
+
+async def download_video_with_retry(client, video_file, max_attempts: int = 5) -> bytes:
+    """완료된 비디오 파일을 일시적인 전송 오류에 복원력 있게 다운로드한다."""
+    logger.info("Downloading generated video file...")
+    for attempt in range(max_attempts):
+        try:
+            video_bytes = await asyncio.to_thread(client.files.download, file=video_file)
+            logger.info("Generated video download completed: %s bytes", len(video_bytes))
+            return video_bytes
+        except Exception as exc:
+            if not is_transient_genai_error(exc) or attempt == max_attempts - 1:
+                raise
+            retry_delay = min(2 ** attempt, 15)
+            logger.warning(
+                "Transient video download error "
+                "(attempt %s/%s, retrying in %ss): %s",
+                attempt + 1,
+                max_attempts,
+                retry_delay,
+                str(exc)[:160],
+            )
+            await asyncio.sleep(retry_delay)
+    raise RuntimeError("비디오 다운로드 재시도 횟수를 초과했습니다.")
+
+
 def validate_veo_options(model: str, resolution: str) -> None:
     """Veo 모델과 해상도 조합이 공식 지원 범위인지 검증한다.
 
@@ -433,7 +527,8 @@ def _generate_omni_video_sync(
     resolution: str,
     aspect_ratio: str,
     input_images: Optional[list[tuple[bytes, str]]] = None,
-) -> bytes:
+    previous_interaction_id: Optional[str] = None,
+) -> tuple[str, bytes]:
     """Interactions API로 Gemini Omni 동영상을 생성하고 MP4 바이트를 반환한다.
 
     Args:
@@ -468,23 +563,55 @@ def _generate_omni_video_sync(
         "resolution": resolution,
         "duration": f"{VIDEO_DURATIONS_SECONDS[OMNI_MODEL]}s",
     }
-    interaction = client.interactions.create(
-        model=OMNI_MODEL,
-        input=interaction_input,
-        extra_body={"response_format": response_format},
-    )
+    create_kwargs = {
+        "model": OMNI_MODEL,
+        "input": interaction_input,
+        "background": True,
+        "extra_body": {"response_format": response_format},
+    }
+    if previous_interaction_id:
+        create_kwargs["previous_interaction_id"] = previous_interaction_id
+
+    interaction = client.interactions.create(**create_kwargs)
+    interaction_id = getattr(interaction, "id", None)
+    if not interaction_id:
+        raise RuntimeError("Gemini Omni 백그라운드 작업 ID를 받지 못했습니다.")
+    logger.info("Gemini Omni background interaction started: %s", interaction_id)
+
+    for _ in range(180):
+        status = str(getattr(interaction, "status", "")).lower()
+        if status == "completed":
+            break
+        if status in {"failed", "cancelled"}:
+            raise RuntimeError(f"Gemini Omni 동영상 생성 작업이 {status} 상태로 종료되었습니다.")
+        time.sleep(5)
+        interaction = call_with_transient_retry(
+            "Omni interaction polling",
+            lambda: client.interactions.get(id=interaction_id),
+        )
+    else:
+        raise RuntimeError("Gemini Omni 동영상 생성 시간이 초과되었습니다.")
+
+    logger.info("Gemini Omni background interaction completed: %s", interaction_id)
     output_video = interaction.output_video
     if output_video is None:
         raise RuntimeError("Gemini Omni 응답에 동영상 데이터가 없습니다.")
     if output_video.data:
-        return base64.b64decode(output_video.data)
+        return interaction_id, base64.b64decode(output_video.data)
     if output_video.uri:
         file_name = output_video.uri.split("/")[-1]
         for _ in range(120):
-            file_info = client.files.get(name=f"files/{file_name}")
+            file_info = call_with_transient_retry(
+                "Omni video file polling",
+                lambda: client.files.get(name=f"files/{file_name}"),
+            )
             state = getattr(file_info.state, "name", str(file_info.state))
             if state == "ACTIVE":
-                return client.files.download(file=output_video.uri)
+                video_bytes = call_with_transient_retry(
+                    "Omni video download",
+                    lambda: client.files.download(file=output_video.uri),
+                )
+                return interaction_id, video_bytes
             if state == "FAILED":
                 raise RuntimeError("Gemini Omni 동영상 파일 처리에 실패했습니다.")
             time.sleep(5)
@@ -499,7 +626,7 @@ async def generate_omni_video(
     input_images: Optional[list[tuple[bytes, str]]] = None,
 ) -> JSONResponse:
     """Omni 동영상 생성을 작업 스레드에서 실행하고 기존 API 형식으로 반환한다."""
-    video_bytes = await asyncio.to_thread(
+    interaction_id, video_bytes = await asyncio.to_thread(
         _generate_omni_video_sync,
         prompt,
         resolution,
@@ -509,11 +636,18 @@ async def generate_omni_video(
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     output_filename = f"output_{timestamp}.mp4"
     (OUTPUTS_DIR / output_filename).write_bytes(video_bytes)
+    video_uuid = str(uuid.uuid4())
+    video_objects_cache[video_uuid] = {
+        "interaction_id": interaction_id,
+        "model": OMNI_MODEL,
+        "edit_count": 0,
+    }
     logger.info("Gemini Omni video saved", extra={"output_filename": output_filename})
     return JSONResponse({
         "status": "success",
         "message": "비디오가 생성되었습니다.",
         "output_file": f"/outputs/{output_filename}",
+        "video_uuid": video_uuid,
         "model": OMNI_MODEL,
     })
 
@@ -1328,7 +1462,7 @@ async def text_to_video(
         client = get_genai_client()
         operation = client.models.generate_videos(
             model=model,
-            prompt=prompt,
+            source=types.GenerateVideosSource(prompt=prompt),
             config=types.GenerateVideosConfig(
                 resolution=resolution,
                 aspect_ratio=aspect_ratio
@@ -1336,9 +1470,7 @@ async def text_to_video(
         )
         
         # 작업 완료 대기
-        while not operation.done:
-            await asyncio.sleep(10)
-            operation = client.operations.get(operation)
+        operation = await wait_for_video_operation(client, operation)
         
         # 작업 결과 확인
         if hasattr(operation, 'error') and operation.error:
@@ -1373,8 +1505,8 @@ async def text_to_video(
         output_filename = f"output_{timestamp}.mp4"
         output_path = OUTPUTS_DIR / output_filename
         
-        client.files.download(file=generated_video.video)
-        generated_video.video.save(str(output_path))
+        video_bytes = await download_video_with_retry(client, generated_video.video)
+        output_path.write_bytes(video_bytes)
         
         # 비디오 객체를 메모리에 저장 (확장 기능용)
         video_uuid = str(uuid.uuid4())
@@ -1473,8 +1605,10 @@ async def image_to_video(
             
             operation = client.models.generate_videos(
                 model=model,
-                prompt=prompt,
-                image=safe_image,
+                source=types.GenerateVideosSource(
+                    prompt=prompt,
+                    image=safe_image,
+                ),
                 config=types.GenerateVideosConfig(
                     resolution=resolution,
                     aspect_ratio=aspect_ratio
@@ -1506,7 +1640,7 @@ async def image_to_video(
             
             operation = client.models.generate_videos(
                 model=model,
-                prompt=prompt,
+                source=types.GenerateVideosSource(prompt=prompt),
                 config=types.GenerateVideosConfig(
                     reference_images=reference_images,
                     resolution=resolution,
@@ -1515,9 +1649,7 @@ async def image_to_video(
             )
         
         # 작업 완료 대기
-        while not operation.done:
-            await asyncio.sleep(10)
-            operation = client.operations.get(operation)
+        operation = await wait_for_video_operation(client, operation)
         
         # 작업 결과 확인
         if hasattr(operation, 'error') and operation.error:
@@ -1548,13 +1680,13 @@ async def image_to_video(
         
         # 비디오 다운로드
         video = operation.response.generated_videos[0]
-        client.files.download(file=video.video)
+        video_bytes = await download_video_with_retry(client, video.video)
         
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         output_filename = f"output_{timestamp}.mp4"
         output_path = OUTPUTS_DIR / output_filename
         
-        video.video.save(str(output_path))
+        output_path.write_bytes(video_bytes)
         
         # 비디오 객체를 메모리에 저장 (확장 기능용)
         video_uuid = str(uuid.uuid4())
@@ -1576,7 +1708,7 @@ async def image_to_video(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Image to Video error: {str(e)}")
+        logger.exception("Image to Video error: %s", e)
         for upload_path in upload_paths:
             if upload_path.exists():
                 upload_path.unlink()
@@ -1600,13 +1732,45 @@ async def extend_video(
         
         cached_video = video_objects_cache[video_uuid]
         if isinstance(cached_video, dict):
-            previous_video = cached_video["video"]
             model = cached_video["model"]
+            previous_video = cached_video.get("video")
         else:
             # 서버 재시작 전 형식과의 호환성 유지
             previous_video = cached_video
             model = VEO_STANDARD_MODEL
         logger.info(f"Retrieved video object from cache: {video_uuid}")
+
+        if model == OMNI_MODEL:
+            previous_interaction_id = cached_video.get("interaction_id")
+            if not previous_interaction_id:
+                raise HTTPException(status_code=400, detail="Gemini Omni 편집 세션을 찾을 수 없습니다.")
+
+            interaction_id, video_bytes = await asyncio.to_thread(
+                _generate_omni_video_sync,
+                prompt,
+                resolution,
+                aspect_ratio,
+                None,
+                previous_interaction_id,
+            )
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            output_filename = f"output_{timestamp}.mp4"
+            (OUTPUTS_DIR / output_filename).write_bytes(video_bytes)
+
+            edited_video_uuid = str(uuid.uuid4())
+            video_objects_cache[edited_video_uuid] = {
+                "interaction_id": interaction_id,
+                "model": OMNI_MODEL,
+                "edit_count": cached_video.get("edit_count", 0) + 1,
+            }
+            del video_objects_cache[video_uuid]
+            return JSONResponse({
+                "status": "success",
+                "message": "Gemini Omni 비디오가 편집되었습니다.",
+                "output_file": f"/outputs/{output_filename}",
+                "video_uuid": edited_video_uuid,
+                "model": OMNI_MODEL,
+            })
 
         if model == VEO_LITE_MODEL:
             raise HTTPException(status_code=400, detail="Veo 3.1 Lite로 생성한 비디오는 확장할 수 없습니다.")
@@ -1618,8 +1782,10 @@ async def extend_video(
         # 비디오 확장 작업 시작 (previous_video.video 전달)
         operation = client.models.generate_videos(
             model=model,
-            prompt=prompt,
-            video=previous_video.video,
+            source=types.GenerateVideosSource(
+                prompt=prompt,
+                video=previous_video.video,
+            ),
             config=types.GenerateVideosConfig(
                 number_of_videos=1,
                 resolution=resolution,
@@ -1630,10 +1796,7 @@ async def extend_video(
         logger.info("Video extension operation started")
         
         # 작업 완료 대기
-        while not operation.done:
-            await asyncio.sleep(10)
-            operation = client.operations.get(operation)
-            logger.info("Waiting for video extension to complete...")
+        operation = await wait_for_video_operation(client, operation)
         
         # 작업 결과 확인
         if hasattr(operation, 'error') and operation.error:
@@ -1668,8 +1831,8 @@ async def extend_video(
         output_filename = f"output_{timestamp}.mp4"
         output_path = OUTPUTS_DIR / output_filename
         
-        client.files.download(file=generated_video.video)
-        generated_video.video.save(str(output_path))
+        video_bytes = await download_video_with_retry(client, generated_video.video)
+        output_path.write_bytes(video_bytes)
         
         # 확장된 비디오 객체를 메모리에 저장 (반복 확장 가능)
         extended_video_uuid = str(uuid.uuid4())
@@ -1886,7 +2049,7 @@ if __name__ == "__main__":
     logger.info("Starting Gemini API Tools Web Application on port 33000")
     uvicorn.run(
         app, 
-        host="0.0.0.0", 
+        host="localhost", 
         port=33000,
         log_level="info",
         access_log=True,

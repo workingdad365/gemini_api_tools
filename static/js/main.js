@@ -874,7 +874,6 @@ async function executeVideoJob(endpoint, formData) {
     log(`비디오 작업 등록됨: ${jobId}`);
 
     while (true) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
         const statusResponse = await fetch(`/api/video-jobs/${encodeURIComponent(jobId)}`, {
             cache: 'no-store'
         });
@@ -893,6 +892,7 @@ async function executeVideoJob(endpoint, formData) {
             throw error;
         }
         progressMessage.textContent = '비디오 생성 중...';
+        await new Promise(resolve => setTimeout(resolve, 5000));
     }
 }
 
@@ -953,7 +953,7 @@ function displayResult(result, operation) {
     
     if (fileType === 'image') {
         content = `
-            <img src="${result.output_file}" class="img-fluid mb-3" alt="Generated Image">
+            <img src="${result.output_file}" class="result-media mb-3" alt="Generated Image">
             <div>
                 <a href="${result.output_file}" download class="btn btn-primary">
                     <i class="bi bi-download"></i> 다운로드
@@ -962,7 +962,7 @@ function displayResult(result, operation) {
         `;
     } else if (fileType === 'video') {
         content = `
-            <video controls class="w-100 mb-3">
+            <video controls class="result-media mb-3">
                 <source src="${result.output_file}" type="video/mp4">
             </video>
             <div class="mb-3">
@@ -974,22 +974,27 @@ function displayResult(result, operation) {
         
         // 비디오 확장 기능 추가 (Text to Video, Image to Video인 경우)
         if (operation === 'text-to-video' || operation === 'image-to-video') {
-            // 기존 확장 API는 Veo Standard/Fast의 720p 비디오만 지원한다.
-            const canExtend = lastVideoResolution === '720p'
-                && lastVideoModel !== modelConfig.video_lite_model
-                && lastVideoModel !== modelConfig.video_omni_model;
-            if (canExtend) {
+            const isOmni = lastVideoModel === modelConfig.video_omni_model;
+            const canExtendVeo = lastVideoResolution === '720p'
+                && [modelConfig.video_standard_model, modelConfig.video_fast_model]
+                    .includes(lastVideoModel);
+            const canContinue = isOmni || canExtendVeo;
+            if (canContinue) {
+                const actionTitle = isOmni ? '비디오 반복 편집' : '비디오 확장';
+                const actionHelp = isOmni
+                    ? '이전 결과를 바탕으로 새 10초 비디오를 생성합니다. 길이를 이어 붙이는 확장이 아니라 장면을 반복 수정하는 기능입니다.'
+                    : '추가 프롬프트를 입력하여 비디오를 확장할 수 있습니다. (최대 141초까지 반복 가능, 한 번에 약 7초씩 확장)';
                 content += `
                     <div class="card mt-3">
                         <div class="card-header bg-info text-white">
-                            <h6 class="mb-0"><i class="bi bi-arrow-right-circle"></i> 비디오 확장</h6>
+                            <h6 class="mb-0"><i class="bi bi-arrow-right-circle"></i> ${actionTitle}</h6>
                         </div>
                         <div class="card-body">
-                            <p class="text-muted small mb-2">추가 프롬프트를 입력하여 비디오를 확장할 수 있습니다. (최대 141초까지 반복 가능, 한 번에 약 7초씩 확장)</p>
+                            <p class="text-muted small mb-2">${actionHelp}</p>
                             <textarea class="form-control mb-2" id="extendPrompt" rows="3" 
-                                placeholder="확장할 내용에 대한 프롬프트를 입력하세요..."></textarea>
+                                placeholder="${isOmni ? '수정할 내용' : '확장할 내용'}에 대한 프롬프트를 입력하세요..."></textarea>
                             <button class="btn btn-info" id="extendVideoBtn">
-                                <i class="bi bi-plus-circle"></i> 비디오 확장 실행
+                                <i class="bi bi-plus-circle"></i> ${isOmni ? '비디오 편집 실행' : '비디오 확장 실행'}
                             </button>
                         </div>
                     </div>
@@ -997,9 +1002,7 @@ function displayResult(result, operation) {
             } else {
                 const reason = lastVideoModel === modelConfig.video_lite_model
                     ? 'Veo 3.1 Lite는 비디오 확장을 지원하지 않습니다.'
-                    : lastVideoModel === modelConfig.video_omni_model
-                        ? 'Gemini Omni 비디오는 현재 이 화면의 확장 기능과 연결되지 않습니다.'
-                        : `${lastVideoResolution} 비디오는 확장할 수 없습니다.`;
+                    : `${lastVideoResolution || '현재 해상도'} 비디오는 확장할 수 없습니다.`;
                 content += `
                     <div class="card mt-3">
                         <div class="card-header bg-warning text-dark">
@@ -1029,14 +1032,15 @@ function displayResult(result, operation) {
     }
     
     resultContent.innerHTML = content;
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     
     // 비디오 확장 버튼 이벤트 리스너 추가 (720p인 경우만)
     if (fileType === 'video'
         && (operation === 'text-to-video' || operation === 'image-to-video')
-        && lastVideoResolution === '720p'
-        && lastVideoModel !== modelConfig.video_lite_model
-        && lastVideoModel !== modelConfig.video_omni_model) {
+        && (lastVideoModel === modelConfig.video_omni_model
+            || (lastVideoResolution === '720p'
+                && [modelConfig.video_standard_model, modelConfig.video_fast_model]
+                    .includes(lastVideoModel)))) {
         const extendBtn = document.getElementById('extendVideoBtn');
         if (extendBtn) {
             extendBtn.addEventListener('click', handleVideoExtension);
@@ -1047,9 +1051,11 @@ function displayResult(result, operation) {
 // 비디오 확장 처리 함수
 async function handleVideoExtension() {
     const extendPrompt = document.getElementById('extendPrompt').value.trim();
+    const isOmni = lastVideoModel === modelConfig.video_omni_model;
+    const actionName = isOmni ? '편집' : '확장';
     
     if (!extendPrompt) {
-        alert('확장할 내용에 대한 프롬프트를 입력하세요.');
+        alert(`${actionName}할 내용에 대한 프롬프트를 입력하세요.`);
         return;
     }
     
@@ -1064,9 +1070,9 @@ async function handleVideoExtension() {
     executeBtn.disabled = true;
     document.getElementById('extendVideoBtn').disabled = true;
     progressAlert.classList.remove('d-none');
-    progressMessage.textContent = '비디오 확장 중...';
+    progressMessage.textContent = `비디오 ${actionName} 중...`;
     
-    log('비디오 확장 작업 시작');
+    log(`비디오 ${actionName} 작업 시작`);
     
     try {
         const result = await executeVideoExtension(
@@ -1077,7 +1083,7 @@ async function handleVideoExtension() {
         );
         
         if (result && result.status === 'success') {
-            log('비디오 확장 완료');
+            log(`비디오 ${actionName} 완료`);
             
             // 결과 업데이트
             const operation = operationType.value;
@@ -1088,11 +1094,11 @@ async function handleVideoExtension() {
         }
     } catch (error) {
         if (error.details) {
-            logError(`비디오 확장 오류:\n${error.details}`);
+            logError(`비디오 ${actionName} 오류:\n${error.details}`);
         } else {
-            logError(`비디오 확장 오류: ${error.message}`);
+            logError(`비디오 ${actionName} 오류: ${error.message}`);
         }
-        alert('비디오 확장 실패: 자세한 내용은 로그를 확인하세요.');
+        alert(`비디오 ${actionName} 실패: 자세한 내용은 로그를 확인하세요.`);
     } finally {
         executeBtn.disabled = false;
         document.getElementById('extendVideoBtn').disabled = false;
@@ -1144,13 +1150,14 @@ loadPromptBtn.addEventListener('click', async () => {
             result.prompts.forEach(prompt => {
                 const preview = prompt.content.substring(0, 100);
                 const displayText = prompt.content.length > 100 ? preview + '...' : preview;
+                const savedAt = formatPromptSavedAt(prompt.created_at);
                 
                 const item = document.createElement('button');
                 item.className = 'list-group-item list-group-item-action';
                 item.innerHTML = `
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1">
-                            <div class="fw-bold">${prompt.created_at}</div>
+                            <div class="fw-bold">${savedAt}</div>
                             <div class="text-muted small mt-1">${displayText}</div>
                         </div>
                         <button class="btn btn-sm btn-danger ms-2 delete-prompt" data-id="${prompt.id}">
@@ -1202,6 +1209,27 @@ loadPromptBtn.addEventListener('click', async () => {
         alert('프롬프트 목록을 불러오는 중 오류가 발생했습니다.');
     }
 });
+
+function formatPromptSavedAt(timestamp) {
+    if (!timestamp) return '';
+
+    const utcTimestamp = timestamp.includes('T')
+        ? timestamp
+        : `${timestamp.replace(' ', 'T')}Z`;
+    const savedAt = new Date(utcTimestamp);
+    if (Number.isNaN(savedAt.getTime())) return timestamp;
+
+    return new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    }).format(savedAt);
+}
 
 // ===== 갤러리 (생성 이미지 사이드바) =====
 

@@ -342,6 +342,21 @@ h6 {
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
+#resultCard .result-media {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(100vh - 12rem);
+    max-height: calc(100dvh - 12rem);
+    margin-inline: auto;
+    object-fit: contain;
+}
+
+#resultCard {
+    scroll-margin-top: 1rem;
+}
+
 /* Animations */
 @keyframes fadeIn {
     from {
