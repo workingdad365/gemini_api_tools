@@ -6,6 +6,8 @@ import base64
 import sqlite3
 import mimetypes
 import struct
+import shutil
+import subprocess
 import logging
 import traceback
 import uuid
@@ -748,6 +750,8 @@ def generate_image_via_interaction(
 # 썸네일 설정
 THUMBNAIL_SUFFIX = ".thumb"  # 썸네일 파일 접미사 (예: output_xxx.png -> output_xxx.png.thumb)
 THUMBNAIL_MAX_SIZE = 320  # 썸네일 최대 변(px)
+VIDEO_THUMBNAIL_SEMAPHORE = asyncio.Semaphore(1)
+MIN_VIDEO_FILE_SIZE = 1024
 
 
 class GalleryCache(BaseModel):
@@ -790,6 +794,41 @@ def create_thumbnail(original_path: Path, image_bytes: bytes) -> Optional[Path]:
         return thumb_path
     except (OSError, ValueError) as exc:
         logger.warning(f"Thumbnail creation failed for {original_path.name}: {exc}")
+        return None
+
+
+def create_video_thumbnail(original_path: Path) -> Optional[Path]:
+    """ffmpeg로 비디오의 대표 프레임 썸네일을 생성한다."""
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        logger.warning("Video thumbnail skipped because ffmpeg is unavailable")
+        return None
+
+    thumb_path = original_path.with_name(original_path.name + THUMBNAIL_SUFFIX)
+    try:
+        subprocess.run(
+            [
+                ffmpeg_path,
+                "-y",
+                "-ss", "0.5",
+                "-i", str(original_path),
+                "-frames:v", "1",
+                "-vf",
+                f"scale={THUMBNAIL_MAX_SIZE}:{THUMBNAIL_MAX_SIZE}:force_original_aspect_ratio=decrease",
+                "-f", "image2",
+                "-vcodec", "png",
+                str(thumb_path),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+        invalidate_gallery_cache()
+        logger.info("Video thumbnail created: %s", thumb_path.name)
+        return thumb_path
+    except (OSError, subprocess.SubprocessError) as exc:
+        thumb_path.unlink(missing_ok=True)
+        logger.warning("Video thumbnail creation failed for %s: %s", original_path.name, exc)
         return None
 
 
@@ -1157,21 +1196,41 @@ async def get_config():
     })
 
 def get_gallery_images() -> list[dict]:
-    """갤러리 파일 인덱스를 디렉터리 변경 시에만 다시 생성하여 반환한다."""
+    """갤러리 미디어 인덱스를 디렉터리 변경 시에만 다시 생성하여 반환한다."""
     directory_mtime_ns = OUTPUTS_DIR.stat().st_mtime_ns
     if GALLERY_CACHE.directory_mtime_ns == directory_mtime_ns:
         return GALLERY_CACHE.images
 
     images = []
+    indexed_filenames = set()
     for thumb_path in OUTPUTS_DIR.glob(f"*{THUMBNAIL_SUFFIX}"):
         # 썸네일명 output_xxx.png.thumb -> 원본명 output_xxx.png
         original_path = thumb_path.with_suffix("")
         if not original_path.exists():
             continue
+        media_type = "video" if original_path.suffix.lower() == ".mp4" else "image"
+        if media_type == "video" and original_path.stat().st_size < MIN_VIDEO_FILE_SIZE:
+            continue
         images.append({
             "filename": original_path.name,
             "thumb_url": f"/api/thumbnail/{thumb_path.name}",
             "original_url": f"/outputs/{original_path.name}",
+            "media_type": media_type,
+            "mtime": original_path.stat().st_mtime,
+        })
+        indexed_filenames.add(original_path.name)
+
+    for original_path in OUTPUTS_DIR.glob("*.mp4"):
+        if (
+            original_path.name in indexed_filenames
+            or original_path.stat().st_size < MIN_VIDEO_FILE_SIZE
+        ):
+            continue
+        images.append({
+            "filename": original_path.name,
+            "thumb_url": f"/api/thumbnail/{original_path.name}{THUMBNAIL_SUFFIX}",
+            "original_url": f"/outputs/{original_path.name}",
+            "media_type": "video",
             "mtime": original_path.stat().st_mtime,
         })
     images.sort(key=lambda item: item["mtime"], reverse=True)
@@ -1233,7 +1292,15 @@ def _resolve_output_path(filename: str) -> Path:
 async def get_thumbnail(filename: str):
     """썸네일 파일(.thumb, PNG 내용)을 image/png 타입으로 반환한다."""
     thumb_path = _resolve_output_path(filename)
-    if not thumb_path.exists() or not thumb_path.name.endswith(THUMBNAIL_SUFFIX):
+    if not thumb_path.name.endswith(THUMBNAIL_SUFFIX):
+        raise HTTPException(status_code=404, detail="썸네일을 찾을 수 없습니다.")
+    if not thumb_path.exists():
+        original_path = thumb_path.with_suffix("")
+        if original_path.exists() and original_path.suffix.lower() == ".mp4":
+            async with VIDEO_THUMBNAIL_SEMAPHORE:
+                if not thumb_path.exists():
+                    await asyncio.to_thread(create_video_thumbnail, original_path)
+    if not thumb_path.exists():
         raise HTTPException(status_code=404, detail="썸네일을 찾을 수 없습니다.")
     return FileResponse(thumb_path, media_type="image/png")
 

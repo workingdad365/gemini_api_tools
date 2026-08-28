@@ -49,6 +49,8 @@ const galleryThumbs = document.getElementById('galleryThumbs');
 const galleryEmpty = document.getElementById('galleryEmpty');
 const imageViewerModal = new bootstrap.Modal(document.getElementById('imageViewerModal'));
 const viewerImage = document.getElementById('viewerImage');
+const viewerVideo = document.getElementById('viewerVideo');
+const viewerTitle = document.getElementById('viewerTitle');
 const viewerEditImageBtn = document.getElementById('viewerEditImageBtn');
 const viewerEditVideoBtn = document.getElementById('viewerEditVideoBtn');
 const viewerDeleteBtn = document.getElementById('viewerDeleteBtn');
@@ -672,7 +674,7 @@ async function executeOperation(isNew = false) {
             displayResult(result, operation);
 
             // 이미지가 생성된 경우 갤러리 갱신
-            if ((operation === 'text-to-image' || operation === 'image-to-image') && result.output_file) {
+            if ((operation.includes('image') || operation.includes('video')) && result.output_file) {
                 loadGallery(true);
             }
         } else {
@@ -1304,7 +1306,7 @@ function renderGallery(images, isFirstPage) {
     if (isFirstPage && images.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'text-muted small text-center p-3';
-        empty.textContent = '아직 생성된 이미지가 없습니다.';
+        empty.textContent = '아직 생성된 미디어가 없습니다.';
         galleryThumbs.appendChild(empty);
         return;
     }
@@ -1317,6 +1319,11 @@ function renderGallery(images, isFirstPage) {
         thumbnail.alt = img.filename;
         thumbnail.loading = 'lazy';
         item.appendChild(thumbnail);
+        const badge = document.createElement('span');
+        badge.className = 'gallery-media-badge';
+        badge.title = img.media_type === 'video' ? '비디오' : '이미지';
+        badge.innerHTML = `<i class="bi ${img.media_type === 'video' ? 'bi-play-fill' : 'bi-image'}"></i>`;
+        item.appendChild(badge);
         item.addEventListener('click', () => openImageViewer(img));
         galleryThumbs.appendChild(item);
     });
@@ -1325,7 +1332,20 @@ function renderGallery(images, isFirstPage) {
 // 이미지 뷰어 모달 열기
 function openImageViewer(img) {
     currentViewerImage = img;
-    viewerImage.src = img.original_url;
+    const isVideo = img.media_type === 'video';
+    viewerTitle.innerHTML = `<i class="bi ${isVideo ? 'bi-film' : 'bi-image'} me-2"></i>${isVideo ? '비디오' : '이미지'}`;
+    viewerImage.classList.toggle('d-none', isVideo);
+    viewerVideo.classList.toggle('d-none', !isVideo);
+    viewerEditImageBtn.classList.toggle('d-none', isVideo);
+    viewerEditVideoBtn.classList.toggle('d-none', isVideo);
+    if (isVideo) {
+        viewerImage.removeAttribute('src');
+        viewerVideo.src = img.original_url;
+    } else {
+        viewerVideo.pause();
+        viewerVideo.removeAttribute('src');
+        viewerImage.src = img.original_url;
+    }
     viewerDownloadBtn.href = img.original_url;
     viewerDownloadBtn.setAttribute('download', img.filename);
     imageViewerModal.show();
@@ -1372,7 +1392,8 @@ async function deleteViewerImage() {
     if (!currentViewerImage) {
         return;
     }
-    if (!confirm('이 이미지를 삭제하시겠습니까?')) {
+    const mediaLabel = currentViewerImage.media_type === 'video' ? '비디오' : '이미지';
+    if (!confirm(`이 ${mediaLabel}를 삭제하시겠습니까?`)) {
         return;
     }
     const { filename } = currentViewerImage;
@@ -1384,12 +1405,12 @@ async function deleteViewerImage() {
             throw new Error('삭제 실패');
         }
         imageViewerModal.hide();
-        log(`이미지 삭제됨: ${filename}`);
+        log(`${mediaLabel} 삭제됨: ${filename}`);
         currentViewerImage = null;
         await loadGallery(true);
     } catch (error) {
-        logError(`이미지 삭제 실패: ${error.message}`);
-        alert('이미지 삭제 중 오류가 발생했습니다.');
+        logError(`${mediaLabel} 삭제 실패: ${error.message}`);
+        alert(`${mediaLabel} 삭제 중 오류가 발생했습니다.`);
     }
 }
 
@@ -1408,6 +1429,10 @@ galleryThumbs.addEventListener('scroll', () => {
 viewerEditImageBtn.addEventListener('click', () => editViewerImage('image-to-image'));
 viewerEditVideoBtn.addEventListener('click', () => editViewerImage('image-to-video'));
 viewerDeleteBtn.addEventListener('click', deleteViewerImage);
+document.getElementById('imageViewerModal').addEventListener('hidden.bs.modal', () => {
+    viewerVideo.pause();
+    viewerVideo.removeAttribute('src');
+});
 
 // 초기화
 initGalleryVisibility();
