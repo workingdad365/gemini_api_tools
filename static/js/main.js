@@ -85,11 +85,13 @@ let modelConfig = {
     video_standard_model: 'veo-3.1-generate-preview',
     video_fast_model: 'veo-3.1-fast-generate-preview',
     video_lite_model: 'veo-3.1-lite-generate-preview',
+    video_omni_model: 'gemini-omni-1.1-flash',
     video_default_model: 'veo-3.1-lite-generate-preview',
     video_model_aliases: {
         'veo-3.1-generate-preview': 'Veo 3.1 Standard Preview',
         'veo-3.1-fast-generate-preview': 'Veo 3.1 Fast Preview',
-        'veo-3.1-lite-generate-preview': 'Veo 3.1 Lite Preview'
+        'veo-3.1-lite-generate-preview': 'Veo 3.1 Lite Preview',
+        'gemini-omni-1.1-flash': 'Gemini Omni 1.1 Flash'
     },
     pricing: {
         image_output: {
@@ -100,7 +102,21 @@ let modelConfig = {
         video_per_second: {
             'veo-3.1-generate-preview': {'720p': 0.40, '1080p': 0.40, '4k': 0.60},
             'veo-3.1-fast-generate-preview': {'720p': 0.10, '1080p': 0.12, '4k': 0.30},
-            'veo-3.1-lite-generate-preview': {'720p': 0.05, '1080p': 0.08}
+            'veo-3.1-lite-generate-preview': {'720p': 0.05, '1080p': 0.08},
+            'gemini-omni-1.1-flash': {'720p': 0.10}
+        },
+        video_durations_seconds: {
+            'veo-3.1-generate-preview': 8,
+            'veo-3.1-fast-generate-preview': 8,
+            'veo-3.1-lite-generate-preview': 8,
+            'gemini-omni-1.1-flash': 10
+        },
+        omni: {
+            model: 'gemini-omni-1.1-flash',
+            input_per_million_tokens: 1.50,
+            text_output_per_million_tokens: 9.00,
+            video_output_per_million_tokens: 17.50,
+            tokens_per_second_720p: 5792
         },
         tts: {
             model: 'gemini-2.5-pro-preview-tts',
@@ -108,7 +124,7 @@ let modelConfig = {
             output_per_million_tokens: 20.00,
             audio_tokens_per_second: 25
         },
-        updated_at: '2026-08-11',
+        updated_at: '2026-08-28',
         source_url: 'https://ai.google.dev/gemini-api/docs/pricing'
     }
 };
@@ -141,9 +157,14 @@ async function loadModelConfig() {
     advOpt.textContent = modelConfig.advanced_model_alias;
     imageModelSelect.appendChild(advOpt);
 
-    // Veo 모델 옵션 업데이트. Lite를 기본값으로 사용한다.
+    // 비디오 모델 옵션 업데이트. Lite를 기본값으로 사용한다.
     videoModel.innerHTML = '';
-    [modelConfig.video_lite_model, modelConfig.video_standard_model, modelConfig.video_fast_model].forEach(model => {
+    [
+        modelConfig.video_lite_model,
+        modelConfig.video_omni_model,
+        modelConfig.video_standard_model,
+        modelConfig.video_fast_model
+    ].forEach(model => {
         const option = document.createElement('option');
         option.value = model;
         option.textContent = modelConfig.video_model_aliases[model] || model;
@@ -177,9 +198,20 @@ function updateEstimatedCost() {
 
     if (operation === 'text-to-video' || operation === 'image-to-video') {
         const perSecond = pricing.video_per_second[videoModel.value]?.[videoResolution.value];
+        const durationSeconds = pricing.video_durations_seconds[videoModel.value] || 8;
+        if (videoModel.value === modelConfig.video_omni_model) {
+            const omni = pricing.omni;
+            pricingValue.textContent = perSecond === undefined
+                ? `${formatUsd(omni.video_output_per_million_tokens)} / 출력 100만 토큰`
+                : `약 ${formatUsd(perSecond * durationSeconds)} / ${durationSeconds}초`;
+            pricingDetail.textContent = perSecond === undefined
+                ? `입력 ${formatUsd(omni.input_per_million_tokens)} / 100만 토큰 · 선택 해상도의 초당 환산가는 공식 미제공 · ${pricing.updated_at} 기준`
+                : `약 ${formatUsd(perSecond)} / 초 · 비디오 출력 ${formatUsd(omni.video_output_per_million_tokens)} / 100만 토큰 · 720p 초당 ${omni.tokens_per_second_720p.toLocaleString('en-US')} 토큰 · 입력 ${formatUsd(omni.input_per_million_tokens)} / 100만 토큰 · ${pricing.updated_at} 기준`;
+            return;
+        }
         pricingValue.textContent = perSecond === undefined
             ? '가격 정보 없음'
-            : `${formatUsd(perSecond * 8)} / 8초`;
+            : `${formatUsd(perSecond * durationSeconds)} / ${durationSeconds}초`;
         pricingDetail.textContent = perSecond === undefined
             ? `${pricing.updated_at} 기준`
             : `${formatUsd(perSecond)} / 초 · 오디오 포함 · 생성된 동영상만 과금 · ${pricing.updated_at} 기준`;
@@ -346,16 +378,25 @@ function updateMaxFiles() {
         fileInputCardTitle.innerHTML = `<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 ${MAX_FILES}장)`;
         log(`최대 파일 수 변경: ${MAX_FILES}장`);
     } else if (operation === 'image-to-video') {
-        MAX_FILES = videoModel.value === modelConfig.video_lite_model ? 1 : 3;
+        MAX_FILES = videoModel.value === modelConfig.video_lite_model
+            ? 1
+            : videoModel.value === modelConfig.video_omni_model
+                ? 6
+                : 3;
         fileInputCardTitle.innerHTML = `<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 ${MAX_FILES}장)`;
     }
 }
 
-// Veo 모델별 지원 해상도와 참조 이미지 개수를 반영한다.
+// 비디오 모델별 지원 해상도와 참조 이미지 개수를 반영한다.
 function updateVideoOptions() {
     const previousResolution = videoResolution.value;
     const isLite = videoModel.value === modelConfig.video_lite_model;
-    const resolutions = isLite ? ['720p', '1080p'] : ['720p', '1080p', '4k'];
+    const isOmni = videoModel.value === modelConfig.video_omni_model;
+    const resolutions = isLite
+        ? ['720p', '1080p']
+        : isOmni
+            ? ['360p', '720p', '1080p', '4k']
+            : ['720p', '1080p', '4k'];
 
     videoResolution.innerHTML = '';
     resolutions.forEach(resolution => {
@@ -373,7 +414,7 @@ function updateVideoOptions() {
         if (selectedFiles.length > MAX_FILES) {
             selectedFiles = selectedFiles.slice(0, MAX_FILES);
             updateImagePreview();
-            log(`선택한 Veo 모델의 제한에 따라 입력 이미지를 ${MAX_FILES}장으로 조정했습니다.`);
+            log(`선택한 비디오 모델의 제한에 따라 입력 이미지를 ${MAX_FILES}장으로 조정했습니다.`);
         }
     }
     updateEstimatedCost();
@@ -933,9 +974,10 @@ function displayResult(result, operation) {
         
         // 비디오 확장 기능 추가 (Text to Video, Image to Video인 경우)
         if (operation === 'text-to-video' || operation === 'image-to-video') {
-            // Standard/Fast의 720p 비디오만 확장 가능
+            // 기존 확장 API는 Veo Standard/Fast의 720p 비디오만 지원한다.
             const canExtend = lastVideoResolution === '720p'
-                && lastVideoModel !== modelConfig.video_lite_model;
+                && lastVideoModel !== modelConfig.video_lite_model
+                && lastVideoModel !== modelConfig.video_omni_model;
             if (canExtend) {
                 content += `
                     <div class="card mt-3">
@@ -955,7 +997,9 @@ function displayResult(result, operation) {
             } else {
                 const reason = lastVideoModel === modelConfig.video_lite_model
                     ? 'Veo 3.1 Lite는 비디오 확장을 지원하지 않습니다.'
-                    : `${lastVideoResolution} 비디오는 확장할 수 없습니다.`;
+                    : lastVideoModel === modelConfig.video_omni_model
+                        ? 'Gemini Omni 비디오는 현재 이 화면의 확장 기능과 연결되지 않습니다.'
+                        : `${lastVideoResolution} 비디오는 확장할 수 없습니다.`;
                 content += `
                     <div class="card mt-3">
                         <div class="card-header bg-warning text-dark">
@@ -991,7 +1035,8 @@ function displayResult(result, operation) {
     if (fileType === 'video'
         && (operation === 'text-to-video' || operation === 'image-to-video')
         && lastVideoResolution === '720p'
-        && lastVideoModel !== modelConfig.video_lite_model) {
+        && lastVideoModel !== modelConfig.video_lite_model
+        && lastVideoModel !== modelConfig.video_omni_model) {
         const extendBtn = document.getElementById('extendVideoBtn');
         if (extendBtn) {
             extendBtn.addEventListener('click', handleVideoExtension);

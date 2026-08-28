@@ -130,19 +130,22 @@ logger.info(f"Model config - STANDARD: {STANDARD_MODEL} ({STANDARD_MODEL_ALIAS})
 VEO_STANDARD_MODEL = "veo-3.1-generate-preview"
 VEO_FAST_MODEL = "veo-3.1-fast-generate-preview"
 VEO_LITE_MODEL = "veo-3.1-lite-generate-preview"
+OMNI_MODEL = "gemini-omni-1.1-flash"
 VEO_MODELS = {
     VEO_STANDARD_MODEL: "Veo 3.1 Standard Preview",
     VEO_FAST_MODEL: "Veo 3.1 Fast Preview",
     VEO_LITE_MODEL: "Veo 3.1 Lite Preview",
+    OMNI_MODEL: "Gemini Omni 1.1 Flash",
 }
 VEO_DEFAULT_MODEL = VEO_LITE_MODEL
 VEO_RESOLUTIONS = {
     VEO_STANDARD_MODEL: {"720p", "1080p", "4k"},
     VEO_FAST_MODEL: {"720p", "1080p", "4k"},
     VEO_LITE_MODEL: {"720p", "1080p"},
+    OMNI_MODEL: {"360p", "720p", "1080p", "4k"},
 }
 
-# Gemini Developer API 유료 등급 표준 가격 (2026-08-11 기준)
+# Gemini Developer API 유료 등급 표준 가격 (2026-08-28 기준)
 IMAGE_OUTPUT_PRICES = {
     STANDARD_MODEL: {"0.5K": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151},
     LITE_MODEL: {"1K": 0.0336},
@@ -152,12 +155,23 @@ VIDEO_PRICES_PER_SECOND = {
     VEO_STANDARD_MODEL: {"720p": 0.40, "1080p": 0.40, "4k": 0.60},
     VEO_FAST_MODEL: {"720p": 0.10, "1080p": 0.12, "4k": 0.30},
     VEO_LITE_MODEL: {"720p": 0.05, "1080p": 0.08},
+    OMNI_MODEL: {"720p": 0.10},
+}
+OMNI_INPUT_PRICE_PER_MILLION_TOKENS = 1.50
+OMNI_TEXT_OUTPUT_PRICE_PER_MILLION_TOKENS = 9.00
+OMNI_VIDEO_OUTPUT_PRICE_PER_MILLION_TOKENS = 17.50
+OMNI_720P_TOKENS_PER_SECOND = 5_792
+VIDEO_DURATIONS_SECONDS = {
+    VEO_STANDARD_MODEL: 8,
+    VEO_FAST_MODEL: 8,
+    VEO_LITE_MODEL: 8,
+    OMNI_MODEL: 10,
 }
 TTS_MODEL = "gemini-2.5-pro-preview-tts"
 TTS_INPUT_PRICE_PER_MILLION_TOKENS = 1.00
 TTS_OUTPUT_PRICE_PER_MILLION_TOKENS = 20.00
 TTS_AUDIO_TOKENS_PER_SECOND = 25
-PRICING_UPDATED_AT = "2026-08-11"
+PRICING_UPDATED_AT = "2026-08-28"
 
 
 def get_genai_client() -> genai.Client:
@@ -412,6 +426,96 @@ async def read_upload_images(files: list[UploadFile]) -> list[tuple[bytes, str]]
         mime_type = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "image/png"
         result.append((data, mime_type))
     return result
+
+
+def _generate_omni_video_sync(
+    prompt: str,
+    resolution: str,
+    aspect_ratio: str,
+    input_images: Optional[list[tuple[bytes, str]]] = None,
+) -> bytes:
+    """Interactions API로 Gemini Omni 동영상을 생성하고 MP4 바이트를 반환한다.
+
+    Args:
+        prompt: 생성할 동영상에 대한 텍스트 지시문.
+        resolution: 출력 해상도. 360p, 720p, 1080p 또는 4k.
+        aspect_ratio: 출력 화면비. 16:9 또는 9:16.
+        input_images: 이미지-동영상 생성에 사용할 이미지 바이트와 MIME 타입 목록.
+
+    Returns:
+        생성된 MP4 파일 바이트.
+
+    Raises:
+        RuntimeError: API 응답에 다운로드 가능한 동영상이 없는 경우.
+    """
+    client = get_genai_client()
+    interaction_input: str | list[dict] = prompt
+    if input_images:
+        interaction_input = [
+            {
+                "type": "image",
+                "data": base64.b64encode(image_bytes).decode("utf-8"),
+                "mime_type": mime_type,
+            }
+            for image_bytes, mime_type in input_images
+        ]
+        interaction_input.append({"type": "text", "text": prompt})
+
+    response_format = {
+        "type": "video",
+        "delivery": "uri" if resolution in {"1080p", "4k"} else "inline",
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+        "duration": f"{VIDEO_DURATIONS_SECONDS[OMNI_MODEL]}s",
+    }
+    interaction = client.interactions.create(
+        model=OMNI_MODEL,
+        input=interaction_input,
+        extra_body={"response_format": response_format},
+    )
+    output_video = interaction.output_video
+    if output_video is None:
+        raise RuntimeError("Gemini Omni 응답에 동영상 데이터가 없습니다.")
+    if output_video.data:
+        return base64.b64decode(output_video.data)
+    if output_video.uri:
+        file_name = output_video.uri.split("/")[-1]
+        for _ in range(120):
+            file_info = client.files.get(name=f"files/{file_name}")
+            state = getattr(file_info.state, "name", str(file_info.state))
+            if state == "ACTIVE":
+                return client.files.download(file=output_video.uri)
+            if state == "FAILED":
+                raise RuntimeError("Gemini Omni 동영상 파일 처리에 실패했습니다.")
+            time.sleep(5)
+        raise RuntimeError("Gemini Omni 동영상 파일 처리 시간이 초과되었습니다.")
+    raise RuntimeError("Gemini Omni 응답에 다운로드 가능한 동영상이 없습니다.")
+
+
+async def generate_omni_video(
+    prompt: str,
+    resolution: str,
+    aspect_ratio: str,
+    input_images: Optional[list[tuple[bytes, str]]] = None,
+) -> JSONResponse:
+    """Omni 동영상 생성을 작업 스레드에서 실행하고 기존 API 형식으로 반환한다."""
+    video_bytes = await asyncio.to_thread(
+        _generate_omni_video_sync,
+        prompt,
+        resolution,
+        aspect_ratio,
+        input_images,
+    )
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_filename = f"output_{timestamp}.mp4"
+    (OUTPUTS_DIR / output_filename).write_bytes(video_bytes)
+    logger.info("Gemini Omni video saved", extra={"output_filename": output_filename})
+    return JSONResponse({
+        "status": "success",
+        "message": "비디오가 생성되었습니다.",
+        "output_file": f"/outputs/{output_filename}",
+        "model": OMNI_MODEL,
+    })
 
 def generate_image_via_interaction(
     client: genai.Client,
@@ -893,11 +997,20 @@ async def get_config():
         "video_standard_model": VEO_STANDARD_MODEL,
         "video_fast_model": VEO_FAST_MODEL,
         "video_lite_model": VEO_LITE_MODEL,
+        "video_omni_model": OMNI_MODEL,
         "video_default_model": VEO_DEFAULT_MODEL,
         "video_model_aliases": VEO_MODELS,
         "pricing": {
             "image_output": IMAGE_OUTPUT_PRICES,
             "video_per_second": VIDEO_PRICES_PER_SECOND,
+            "video_durations_seconds": VIDEO_DURATIONS_SECONDS,
+            "omni": {
+                "model": OMNI_MODEL,
+                "input_per_million_tokens": OMNI_INPUT_PRICE_PER_MILLION_TOKENS,
+                "text_output_per_million_tokens": OMNI_TEXT_OUTPUT_PRICE_PER_MILLION_TOKENS,
+                "video_output_per_million_tokens": OMNI_VIDEO_OUTPUT_PRICE_PER_MILLION_TOKENS,
+                "tokens_per_second_720p": OMNI_720P_TOKENS_PER_SECOND,
+            },
             "tts": {
                 "model": TTS_MODEL,
                 "input_per_million_tokens": TTS_INPUT_PRICE_PER_MILLION_TOKENS,
@@ -1209,6 +1322,9 @@ async def text_to_video(
     """Text to Video 작업"""
     try:
         validate_veo_options(model, resolution)
+        if model == OMNI_MODEL:
+            return await generate_omni_video(prompt, resolution, aspect_ratio)
+
         client = get_genai_client()
         operation = client.models.generate_videos(
             model=model,
@@ -1303,12 +1419,21 @@ async def image_to_video(
     try:
         validate_veo_options(model, resolution)
 
-        # 최대 3개까지만 처리
-        files_to_process = files[:3]
+        # Omni는 참조 이미지 6장, Veo는 최대 3장까지 처리한다.
+        max_files = 6 if model == OMNI_MODEL else 3
+        files_to_process = files[:max_files]
         if model == VEO_LITE_MODEL and len(files_to_process) > 1:
             raise HTTPException(
                 status_code=400,
                 detail="Veo 3.1 Lite는 시작 이미지 1장만 지원합니다. 여러 참조 이미지는 Standard 또는 Fast를 선택하세요.",
+            )
+        if model == OMNI_MODEL:
+            input_images = await read_upload_images(files_to_process)
+            return await generate_omni_video(
+                prompt or "Animate this image",
+                resolution,
+                aspect_ratio,
+                input_images,
             )
         logger.info(f"Processing {len(files_to_process)} images for image-to-video")
         
@@ -1586,7 +1711,8 @@ async def start_image_to_video_job(
     """
     validate_veo_options(model, resolution)
     copied_files = []
-    for file in files[:3]:
+    max_files = 6 if model == OMNI_MODEL else 3
+    for file in files[:max_files]:
         content = await file.read()
         headers = Headers({"content-type": file.content_type or "image/png"})
         copied_files.append(UploadFile(file=BytesIO(content), filename=file.filename, headers=headers))
