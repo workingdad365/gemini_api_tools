@@ -162,6 +162,7 @@ VIDEO_PRICES_PER_SECOND = {
 OMNI_INPUT_PRICE_PER_MILLION_TOKENS = 1.50
 OMNI_TEXT_OUTPUT_PRICE_PER_MILLION_TOKENS = 9.00
 OMNI_VIDEO_OUTPUT_PRICE_PER_MILLION_TOKENS = 17.50
+OMNI_MAX_VIDEO_EXTENSIONS = 3
 OMNI_720P_TOKENS_PER_SECOND = 5_792
 VIDEO_DURATIONS_SECONDS = {
     VEO_STANDARD_MODEL: 8,
@@ -651,6 +652,9 @@ async def generate_omni_video(
         "output_file": f"/outputs/{output_filename}",
         "video_uuid": video_uuid,
         "model": OMNI_MODEL,
+        "extension_count": 0,
+        "can_extend": True,
+        "cumulative_duration_seconds": VIDEO_DURATIONS_SECONDS[OMNI_MODEL],
     })
 
 def generate_image_via_interaction(
@@ -1811,6 +1815,12 @@ async def extend_video(
             previous_interaction_id = cached_video.get("interaction_id")
             if not previous_interaction_id:
                 raise HTTPException(status_code=400, detail="Gemini Omni 편집 세션을 찾을 수 없습니다.")
+            extension_count = cached_video.get("edit_count", 0)
+            if extension_count >= OMNI_MAX_VIDEO_EXTENSIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Gemini Omni 비디오는 최대 누적 40초까지만 연장할 수 있습니다.",
+                )
 
             interaction_id, video_bytes = await asyncio.to_thread(
                 _generate_omni_video_sync,
@@ -1825,18 +1835,24 @@ async def extend_video(
             (OUTPUTS_DIR / output_filename).write_bytes(video_bytes)
 
             edited_video_uuid = str(uuid.uuid4())
+            extension_count += 1
             video_objects_cache[edited_video_uuid] = {
                 "interaction_id": interaction_id,
                 "model": OMNI_MODEL,
-                "edit_count": cached_video.get("edit_count", 0) + 1,
+                "edit_count": extension_count,
             }
             del video_objects_cache[video_uuid]
             return JSONResponse({
                 "status": "success",
-                "message": "Gemini Omni 비디오가 편집되었습니다.",
+                "message": "Gemini Omni 비디오가 10초 연장되었습니다.",
                 "output_file": f"/outputs/{output_filename}",
                 "video_uuid": edited_video_uuid,
                 "model": OMNI_MODEL,
+                "extension_count": extension_count,
+                "can_extend": extension_count < OMNI_MAX_VIDEO_EXTENSIONS,
+                "cumulative_duration_seconds": (
+                    extension_count + 1
+                ) * VIDEO_DURATIONS_SECONDS[OMNI_MODEL],
             })
 
         if model == VEO_LITE_MODEL:

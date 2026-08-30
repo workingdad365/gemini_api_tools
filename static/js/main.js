@@ -70,6 +70,7 @@ let MAX_FILES = 3;
 let lastGeneratedVideoUUID = null; // 마지막 생성된 비디오 UUID 저장
 let lastVideoResolution = null; // 마지막 생성된 비디오 해상도 저장
 let lastVideoModel = null; // 마지막 생성에 사용한 Veo 모델 저장
+let lastOmniExtensionCount = 0;
 let lastImageSessionId = null; // 마지막 이미지 생성 세션 ID (Multi-turn용)
 let isSettingsVisible = false;
 let lastOperationType = null;
@@ -514,6 +515,7 @@ function updateUIForOperation() {
     lastGeneratedVideoUUID = null;
     lastVideoResolution = null;
     lastVideoModel = null;
+    lastOmniExtensionCount = 0;
     
     // 파일 입력 표시 여부
     if (operation === 'image-to-image' || operation === 'image-to-video') {
@@ -800,6 +802,7 @@ async function executeTextToVideo(prompt, model, resolution, aspectRatio) {
         lastGeneratedVideoUUID = result.video_uuid;
         lastVideoResolution = resolution;
         lastVideoModel = result.model || model;
+        lastOmniExtensionCount = result.extension_count || 0;
         log(`Saved video UUID: ${lastGeneratedVideoUUID}, model: ${lastVideoModel}, resolution: ${lastVideoResolution}`);
     } else {
         log(`No video_uuid in response`);
@@ -831,6 +834,7 @@ async function executeImageToVideo(prompt, files, model, resolution, aspectRatio
         lastGeneratedVideoUUID = result.video_uuid;
         lastVideoResolution = resolution;
         lastVideoModel = result.model || model;
+        lastOmniExtensionCount = result.extension_count || 0;
         log(`Saved video UUID: ${lastGeneratedVideoUUID}, model: ${lastVideoModel}, resolution: ${lastVideoResolution}`);
     } else {
         log(`No video_uuid in response`);
@@ -854,6 +858,9 @@ async function executeVideoExtension(prompt, videoUUID, resolution, aspectRatio)
     log(`Response extended video_uuid: ${result.video_uuid}`);
     if (result.video_uuid) {
         lastGeneratedVideoUUID = result.video_uuid;
+        if (result.model === modelConfig.video_omni_model) {
+            lastOmniExtensionCount = result.extension_count || 0;
+        }
         // 확장 시 해상도는 동일하게 유지됨
         log(`Saved extended video UUID: ${lastGeneratedVideoUUID}, resolution: ${lastVideoResolution}`);
     }
@@ -980,11 +987,11 @@ function displayResult(result, operation) {
             const canExtendVeo = lastVideoResolution === '720p'
                 && [modelConfig.video_standard_model, modelConfig.video_fast_model]
                     .includes(lastVideoModel);
-            const canContinue = isOmni || canExtendVeo;
+            const canContinue = (isOmni && lastOmniExtensionCount < 3) || canExtendVeo;
             if (canContinue) {
-                const actionTitle = isOmni ? '비디오 반복 편집' : '비디오 확장';
+                const actionTitle = isOmni ? '장면 연장' : '비디오 확장';
                 const actionHelp = isOmni
-                    ? '이전 결과를 바탕으로 새 10초 비디오를 생성합니다. 길이를 이어 붙이는 확장이 아니라 장면을 반복 수정하는 기능입니다.'
+                    ? `현재 ${10 + lastOmniExtensionCount * 10}초 · 한 번에 10초씩 최대 누적 40초까지 연장할 수 있습니다.`
                     : '추가 프롬프트를 입력하여 비디오를 확장할 수 있습니다. (최대 141초까지 반복 가능, 한 번에 약 7초씩 확장)';
                 content += `
                     <div class="card mt-3">
@@ -994,17 +1001,19 @@ function displayResult(result, operation) {
                         <div class="card-body">
                             <p class="text-muted small mb-2">${actionHelp}</p>
                             <textarea class="form-control mb-2" id="extendPrompt" rows="3" 
-                                placeholder="${isOmni ? '수정할 내용' : '확장할 내용'}에 대한 프롬프트를 입력하세요..."></textarea>
+                                placeholder="확장할 내용에 대한 프롬프트를 입력하세요..."></textarea>
                             <button class="btn btn-info" id="extendVideoBtn">
-                                <i class="bi bi-plus-circle"></i> ${isOmni ? '비디오 편집 실행' : '비디오 확장 실행'}
+                                <i class="bi bi-plus-circle"></i> 비디오 확장 실행
                             </button>
                         </div>
                     </div>
                 `;
             } else {
-                const reason = lastVideoModel === modelConfig.video_lite_model
-                    ? 'Veo 3.1 Lite는 비디오 확장을 지원하지 않습니다.'
-                    : `${lastVideoResolution || '현재 해상도'} 비디오는 확장할 수 없습니다.`;
+                const reason = isOmni
+                    ? 'Gemini Omni 비디오가 최대 누적 길이인 40초에 도달했습니다.'
+                    : lastVideoModel === modelConfig.video_lite_model
+                        ? 'Veo 3.1 Lite는 비디오 확장을 지원하지 않습니다.'
+                        : `${lastVideoResolution || '현재 해상도'} 비디오는 확장할 수 없습니다.`;
                 content += `
                     <div class="card mt-3">
                         <div class="card-header bg-warning text-dark">
@@ -1039,7 +1048,7 @@ function displayResult(result, operation) {
     // 비디오 확장 버튼 이벤트 리스너 추가 (720p인 경우만)
     if (fileType === 'video'
         && (operation === 'text-to-video' || operation === 'image-to-video')
-        && (lastVideoModel === modelConfig.video_omni_model
+        && ((lastVideoModel === modelConfig.video_omni_model && lastOmniExtensionCount < 3)
             || (lastVideoResolution === '720p'
                 && [modelConfig.video_standard_model, modelConfig.video_fast_model]
                     .includes(lastVideoModel)))) {
@@ -1053,8 +1062,7 @@ function displayResult(result, operation) {
 // 비디오 확장 처리 함수
 async function handleVideoExtension() {
     const extendPrompt = document.getElementById('extendPrompt').value.trim();
-    const isOmni = lastVideoModel === modelConfig.video_omni_model;
-    const actionName = isOmni ? '편집' : '확장';
+    const actionName = '확장';
     
     if (!extendPrompt) {
         alert(`${actionName}할 내용에 대한 프롬프트를 입력하세요.`);
@@ -1090,9 +1098,6 @@ async function handleVideoExtension() {
             // 결과 업데이트
             const operation = operationType.value;
             displayResult(result, operation);
-            
-            // 확장 프롬프트 초기화
-            document.getElementById('extendPrompt').value = '';
         }
     } catch (error) {
         if (error.details) {
@@ -1103,7 +1108,10 @@ async function handleVideoExtension() {
         alert(`비디오 ${actionName} 실패: 자세한 내용은 로그를 확인하세요.`);
     } finally {
         executeBtn.disabled = false;
-        document.getElementById('extendVideoBtn').disabled = false;
+        const extendVideoBtn = document.getElementById('extendVideoBtn');
+        if (extendVideoBtn) {
+            extendVideoBtn.disabled = false;
+        }
         progressAlert.classList.add('d-none');
     }
 }
