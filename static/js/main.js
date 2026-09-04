@@ -89,7 +89,7 @@ let modelConfig = {
     video_fast_model: 'veo-3.1-fast-generate-preview',
     video_lite_model: 'veo-3.1-lite-generate-preview',
     video_omni_model: 'gemini-omni-1.1-flash',
-    video_default_model: 'veo-3.1-lite-generate-preview',
+    video_default_model: 'gemini-omni-1.1-flash',
     video_model_aliases: {
         'veo-3.1-generate-preview': 'Veo 3.1 Standard Preview',
         'veo-3.1-fast-generate-preview': 'Veo 3.1 Fast Preview',
@@ -160,11 +160,11 @@ async function loadModelConfig() {
     advOpt.textContent = modelConfig.advanced_model_alias;
     imageModelSelect.appendChild(advOpt);
 
-    // 비디오 모델 옵션 업데이트. Lite를 기본값으로 사용한다.
+    // 비디오 모델 옵션 업데이트. Omni를 기본값으로 사용한다.
     videoModel.innerHTML = '';
     [
-        modelConfig.video_lite_model,
         modelConfig.video_omni_model,
+        modelConfig.video_lite_model,
         modelConfig.video_standard_model,
         modelConfig.video_fast_model
     ].forEach(model => {

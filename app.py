@@ -139,7 +139,7 @@ VEO_MODELS = {
     VEO_LITE_MODEL: "Veo 3.1 Lite Preview",
     OMNI_MODEL: "Gemini Omni 1.1 Flash",
 }
-VEO_DEFAULT_MODEL = VEO_LITE_MODEL
+VEO_DEFAULT_MODEL = OMNI_MODEL
 VEO_RESOLUTIONS = {
     VEO_STANDARD_MODEL: {"720p", "1080p", "4k"},
     VEO_FAST_MODEL: {"720p", "1080p", "4k"},
@@ -164,6 +164,8 @@ OMNI_TEXT_OUTPUT_PRICE_PER_MILLION_TOKENS = 9.00
 OMNI_VIDEO_OUTPUT_PRICE_PER_MILLION_TOKENS = 17.50
 OMNI_MAX_VIDEO_EXTENSIONS = 3
 OMNI_720P_TOKENS_PER_SECOND = 5_792
+# 동영상 파일 다운로드가 길어질 수 있어 SDK 기본 타임아웃보다 길게 잡는다.
+OMNI_REQUEST_TIMEOUT_MS = 15 * 60 * 1000
 VIDEO_DURATIONS_SECONDS = {
     VEO_STANDARD_MODEL: 8,
     VEO_FAST_MODEL: 8,
@@ -546,7 +548,10 @@ def _generate_omni_video_sync(
     Raises:
         RuntimeError: API 응답에 다운로드 가능한 동영상이 없는 경우.
     """
-    client = get_genai_client()
+    client = genai.Client(
+        api_key=gemini_api_key,
+        http_options=types.HttpOptions(timeout=OMNI_REQUEST_TIMEOUT_MS),
+    )
     interaction_input: str | list[dict] = prompt
     if input_images:
         interaction_input = [
@@ -588,9 +593,10 @@ def _generate_omni_video_sync(
         if status in {"failed", "cancelled"}:
             raise RuntimeError(f"Gemini Omni 동영상 생성 작업이 {status} 상태로 종료되었습니다.")
         time.sleep(5)
+        # include_input=False로 입력 이미지 base64가 응답에 다시 실려 400이 나는 것을 막는다.
         interaction = call_with_transient_retry(
             "Omni interaction polling",
-            lambda: client.interactions.get(id=interaction_id),
+            lambda: client.interactions.get(id=interaction_id, include_input=False),
         )
     else:
         raise RuntimeError("Gemini Omni 동영상 생성 시간이 초과되었습니다.")
@@ -1522,7 +1528,7 @@ async def text_to_video(
     prompt: str = Form(...),
     model: str = Form(VEO_DEFAULT_MODEL),
     resolution: str = Form("720p"),
-    aspect_ratio: str = Form("16:9")
+    aspect_ratio: str = Form("9:16")
 ):
     """Text to Video 작업"""
     try:
@@ -1602,7 +1608,7 @@ async def start_text_to_video_job(
     prompt: str = Form(...),
     model: str = Form(VEO_DEFAULT_MODEL),
     resolution: str = Form("720p"),
-    aspect_ratio: str = Form("16:9"),
+    aspect_ratio: str = Form("9:16"),
 ):
     """Text to Video 작업을 백그라운드에서 시작하고 즉시 작업 ID를 반환한다."""
     validate_veo_options(model, resolution)
@@ -1615,7 +1621,7 @@ async def image_to_video(
     files: list[UploadFile] = File(...),
     model: str = Form(VEO_DEFAULT_MODEL),
     resolution: str = Form("720p"),
-    aspect_ratio: str = Form("16:9")
+    aspect_ratio: str = Form("9:16")
 ):
     """Image to Video 작업 (멀티 이미지 지원)"""
     upload_paths = []
@@ -1790,7 +1796,7 @@ async def extend_video(
     prompt: str = Form(...),
     video_uuid: str = Form(...),
     resolution: str = Form("720p"),
-    aspect_ratio: str = Form("16:9")
+    aspect_ratio: str = Form("9:16")
 ):
     """비디오 확장 작업"""
     try:
@@ -1948,7 +1954,7 @@ async def start_image_to_video_job(
     files: list[UploadFile] = File(...),
     model: str = Form(VEO_DEFAULT_MODEL),
     resolution: str = Form("720p"),
-    aspect_ratio: str = Form("16:9"),
+    aspect_ratio: str = Form("9:16"),
 ):
     """Image to Video 작업을 백그라운드에서 시작하고 즉시 작업 ID를 반환한다.
 
@@ -1974,7 +1980,7 @@ async def start_extend_video_job(
     prompt: str = Form(...),
     video_uuid: str = Form(...),
     resolution: str = Form("720p"),
-    aspect_ratio: str = Form("16:9"),
+    aspect_ratio: str = Form("9:16"),
 ):
     """비디오 확장 작업을 백그라운드에서 시작하고 즉시 작업 ID를 반환한다."""
     if video_uuid not in video_objects_cache:
