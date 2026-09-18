@@ -2,6 +2,10 @@
 
 FastAPI 기반 웹 애플리케이션으로 Google Gemini API를 활용한 이미지, 비디오, 음성 생성 도구
 
+
+
+![](screenshot.webp)
+
 ## 주요 기능
 
 ### 지원 작업
