@@ -1389,6 +1389,8 @@ async function editViewerImage(targetOperation) {
         const modeLabel = targetOperation === 'image-to-video' ? '비디오' : '이미지';
         log(`${modeLabel} 편집용 base 이미지 로드됨: ${filename}`);
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        // 데스크탑 듀얼 패널에서는 입력 패널이 독립 스크롤되므로 함께 맨 위로 이동
+        document.getElementById('inputPanel')?.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
         logError(`편집용 이미지 로드 실패: ${error.message}`);
         alert('편집용 이미지를 불러오지 못했습니다.');

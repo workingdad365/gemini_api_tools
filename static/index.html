@@ -52,9 +52,10 @@
     <div class="gallery-backdrop" id="galleryBackdrop"></div>
 
     <div class="main-wrap">
-    <div class="container py-3">
-        <div class="row">
-            <div class="col-lg-8 mx-auto">
+    <div class="container main-container">
+        <div class="row dual-panel">
+            <!-- 입력 패널 (데스크탑: 좌측) -->
+            <div class="col-lg-8 col-xl-5 mx-auto input-panel" id="inputPanel">
                 <!-- Header -->
                 <!--
                 <div class="text-center mb-5">
@@ -249,7 +250,10 @@
                         <i class="bi bi-play-circle-fill me-2"></i> <span class="fw-bold fs-6" id="executeBtnLabel">실행하기</span>
                     </button>
                 </div>
-                
+            </div>
+
+            <!-- 출력 패널 (데스크탑: 우측) -->
+            <div class="col-lg-8 col-xl-7 mx-auto output-panel">
                 <!-- 진행 상태 -->
                 <div class="alert alert-info d-none border-0 shadow" id="progressAlert" role="alert">
                     <div class="d-flex align-items-center justify-content-center">
@@ -270,7 +274,7 @@
                 </div>
 
                 <!-- 로그 -->
-                <div class="card shadow border-0">
+                <div class="card shadow border-0 log-card">
                     <div class="card-header card-header-custom">
                         <h5 class="mb-0"><i class="bi bi-terminal me-2"></i> 로그</h5>
                     </div>
