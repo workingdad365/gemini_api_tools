@@ -60,7 +60,7 @@ else:
     logger.error(f".env file not found at {app_env_path}")
     raise FileNotFoundError(f".env file not found at {app_env_path}")
 
-app = FastAPI(title="Google Gemini API Tools")
+app = FastAPI(title="Gemini Playground")
 
 # CORS 설정
 app.add_middleware(
@@ -1051,7 +1051,7 @@ def render_login_page(alert_html: str = "", hide_form: bool = False) -> HTMLResp
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Login - Google Gemini API Tools</title>
+        <title>Login - Gemini Playground</title>
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
         <style>{LOGIN_PAGE_STYLE}</style>
@@ -1063,7 +1063,7 @@ def render_login_page(alert_html: str = "", hide_form: bool = False) -> HTMLResp
         </select>
         <div class="login-card">
             <h3 class="login-title text-center">
-                <i class="bi bi-stars text-primary"></i> Gemini API Tools
+                <i class="bi bi-stars text-primary"></i> Gemini Playground
             </h3>
             {alert_html}
             <form method="post" action="/login" {form_style}>
@@ -2216,7 +2216,7 @@ def open_browser_when_ready(url: str, delay_seconds: float = 1.5) -> None:
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("Starting Gemini API Tools Web Application on port 33000")
+    logger.info("Starting Gemini Playground on port 33000")
     open_browser_when_ready("http://localhost:33000")
     uvicorn.run(
         app, 

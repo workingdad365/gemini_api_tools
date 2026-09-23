@@ -1,5 +1,5 @@
 #!/bin/bash
-# Google Gemini API Tools - Web Application 시작 스크립트
+# Gemini Playground 시작 스크립트
 
 # 스크립트 위치로 이동
 cd "$(dirname "$0")"

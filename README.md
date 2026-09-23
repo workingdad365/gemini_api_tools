@@ -1,4 +1,4 @@
-# Google Gemini API Tools - Web Application
+# Gemini Playground
 
 [English](README.en.md) | **한국어**
 
@@ -75,7 +75,7 @@ tail -f server.log
 ### 방법 2: nohup 직접 사용
 
 ```bash
-cd /path/to/gemini_api_tools
+cd /path/to/gemini-playground
 nohup uv run app.py > server.log 2>&1 &
 echo $! > server.pid
 
@@ -87,54 +87,54 @@ kill $(cat server.pid)
 
 1. **서비스 파일 수정**
 ```bash
-# gemini-api-webapp.service 파일에서 다음 항목 수정:
+# gemini-playground.service 파일에서 다음 항목 수정:
 # - YOUR_USERNAME: 실제 사용자명
-# - /path/to/gemini_api_tools: 실제 경로
+# - /path/to/gemini-playground: 실제 경로
 ```
 
 2. **서비스 설치**
 ```bash
-sudo cp gemini-api-webapp.service /etc/systemd/system/
+sudo cp gemini-playground.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable gemini-api-webapp
-sudo systemctl start gemini-api-webapp
+sudo systemctl enable gemini-playground
+sudo systemctl start gemini-playground
 ```
 
 3. **서비스 관리**
 ```bash
 # 상태 확인
-sudo systemctl status gemini-api-webapp
+sudo systemctl status gemini-playground
 
 # 로그 확인
-sudo journalctl -u gemini-api-webapp -f
+sudo journalctl -u gemini-playground -f
 
 # 서비스 중지
-sudo systemctl stop gemini-api-webapp
+sudo systemctl stop gemini-playground
 
 # 서비스 재시작
-sudo systemctl restart gemini-api-webapp
+sudo systemctl restart gemini-playground
 ```
 
 ### 방법 4: screen 또는 tmux 사용
 
 ```bash
 # screen 사용
-screen -S gemini-webapp
-cd /path/to/gemini_api_tools
+screen -S gemini-playground
+cd /path/to/gemini-playground
 uv run app.py
 # Ctrl+A, D로 detach
 
 # 다시 접속
-screen -r gemini-webapp
+screen -r gemini-playground
 
 # tmux 사용
-tmux new -s gemini-webapp
-cd /path/to/gemini_api_tools
+tmux new -s gemini-playground
+cd /path/to/gemini-playground
 uv run app.py
 # Ctrl+B, D로 detach
 
 # 다시 접속
-tmux attach -t gemini-webapp
+tmux attach -t gemini-playground
 ```
 
 ### Windows 배포
@@ -159,7 +159,7 @@ start_server.bat
 ├── start_server.sh             # 서버 시작 스크립트 (Linux/Mac)
 ├── stop_server.sh              # 서버 중지 스크립트 (Linux/Mac)
 ├── start_server.bat            # 서버 시작 스크립트 (Windows)
-├── gemini-api-webapp.service   # systemd 서비스 파일
+├── gemini-playground.service   # systemd 서비스 파일
 ├── data.db                     # 프롬프트 데이터베이스 (자동 생성, Git 무시)
 ├── server.log                  # 서버 로그 (자동 생성, Git 무시)
 ├── server.pid                  # 프로세스 ID (자동 생성, Git 무시)
@@ -248,9 +248,9 @@ curl http://localhost:33000/health
 {
   "status": "healthy",
   "api_key_loaded": true,
-   "outputs_dir": "/path/to/gemini_api_tools/outputs",
+   "outputs_dir": "/path/to/gemini-playground/outputs",
   "outputs_dir_exists": true,
-   "db_path": "/path/to/gemini_api_tools/data.db",
+   "db_path": "/path/to/gemini-playground/data.db",
   "db_exists": true
 }
 ```

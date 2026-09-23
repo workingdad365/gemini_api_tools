@@ -1,7 +1,7 @@
 [project]
-name = "gemini-api-tools-webapp"
+name = "gemini-playground"
 version = "1.0.0"
-description = "Google Gemini API Tools - Web Application"
+description = "Gemini Playground"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.109.0",

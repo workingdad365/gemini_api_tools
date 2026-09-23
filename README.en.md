@@ -1,4 +1,4 @@
-# Google Gemini API Tools - Web Application
+# Gemini Playground
 
 **English** | [한국어](README.md)
 
@@ -75,7 +75,7 @@ tail -f server.log
 ### Option 2: nohup directly
 
 ```bash
-cd /path/to/gemini_api_tools
+cd /path/to/gemini-playground
 nohup uv run app.py > server.log 2>&1 &
 echo $! > server.pid
 
@@ -87,54 +87,54 @@ kill $(cat server.pid)
 
 1. **Edit the service file**
 ```bash
-# Edit the following in gemini-api-webapp.service:
+# Edit the following in gemini-playground.service:
 # - YOUR_USERNAME: your actual username
-# - /path/to/gemini_api_tools: the actual path
+# - /path/to/gemini-playground: the actual path
 ```
 
 2. **Install the service**
 ```bash
-sudo cp gemini-api-webapp.service /etc/systemd/system/
+sudo cp gemini-playground.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable gemini-api-webapp
-sudo systemctl start gemini-api-webapp
+sudo systemctl enable gemini-playground
+sudo systemctl start gemini-playground
 ```
 
 3. **Manage the service**
 ```bash
 # Check status
-sudo systemctl status gemini-api-webapp
+sudo systemctl status gemini-playground
 
 # View logs
-sudo journalctl -u gemini-api-webapp -f
+sudo journalctl -u gemini-playground -f
 
 # Stop the service
-sudo systemctl stop gemini-api-webapp
+sudo systemctl stop gemini-playground
 
 # Restart the service
-sudo systemctl restart gemini-api-webapp
+sudo systemctl restart gemini-playground
 ```
 
 ### Option 4: screen or tmux
 
 ```bash
 # Using screen
-screen -S gemini-webapp
-cd /path/to/gemini_api_tools
+screen -S gemini-playground
+cd /path/to/gemini-playground
 uv run app.py
 # Detach with Ctrl+A, D
 
 # Reattach
-screen -r gemini-webapp
+screen -r gemini-playground
 
 # Using tmux
-tmux new -s gemini-webapp
-cd /path/to/gemini_api_tools
+tmux new -s gemini-playground
+cd /path/to/gemini-playground
 uv run app.py
 # Detach with Ctrl+B, D
 
 # Reattach
-tmux attach -t gemini-webapp
+tmux attach -t gemini-playground
 ```
 
 ### Windows Deployment
@@ -159,7 +159,7 @@ To register it as a Windows service, NSSM (Non-Sucking Service Manager) is recom
 ├── start_server.sh             # Server start script (Linux/Mac)
 ├── stop_server.sh              # Server stop script (Linux/Mac)
 ├── start_server.bat            # Server start script (Windows)
-├── gemini-api-webapp.service   # systemd service file
+├── gemini-playground.service   # systemd service file
 ├── data.db                     # Prompt database (auto-generated, ignored by Git)
 ├── server.log                  # Server log (auto-generated, ignored by Git)
 ├── server.pid                  # Process ID (auto-generated, ignored by Git)
@@ -248,9 +248,9 @@ Example response:
 {
   "status": "healthy",
   "api_key_loaded": true,
-   "outputs_dir": "/path/to/gemini_api_tools/outputs",
+   "outputs_dir": "/path/to/gemini-playground/outputs",
   "outputs_dir_exists": true,
-   "db_path": "/path/to/gemini_api_tools/data.db",
+   "db_path": "/path/to/gemini-playground/data.db",
   "db_exists": true
 }
 ```

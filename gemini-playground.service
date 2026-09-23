@@ -1,0 +1,19 @@
+[Unit]
+Description=Gemini Playground
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/path/to/gemini-playground
+Environment="PATH=/path/to/gemini-playground/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/path/to/gemini-playground/.env
+ExecStart=/usr/local/bin/uv run app.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/path/to/gemini-playground/server.log
+StandardError=append:/path/to/gemini-playground/server.log
+
+[Install]
+WantedBy=multi-user.target
+

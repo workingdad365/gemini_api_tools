@@ -174,7 +174,7 @@ wheels = [
 ]
 
 [[package]]
-name = "gemini-api-tools-webapp"
+name = "gemini-playground"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

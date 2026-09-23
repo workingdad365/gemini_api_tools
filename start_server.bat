@@ -1,5 +1,5 @@
 @echo off
-REM Google Gemini API Tools - Web Application 시작 스크립트 (Windows)
+REM Gemini Playground 시작 스크립트 (Windows)
 
 cd /d "%~dp0"
 
