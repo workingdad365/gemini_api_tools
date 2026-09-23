@@ -8,6 +8,9 @@ import mimetypes
 import struct
 import shutil
 import subprocess
+import sys
+import threading
+import webbrowser
 import logging
 import traceback
 import uuid
@@ -19,6 +22,7 @@ from pathlib import Path
 import secrets
 import hashlib
 from collections import defaultdict
+from contextvars import ContextVar
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request, Response, Cookie, Depends, Query
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, RedirectResponse
@@ -67,6 +71,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 다국어 설정: 클라이언트가 localStorage의 언어 선택을 "lang" 쿠키로 동기화하며,
+# 서버는 이를 요청 단위 ContextVar에 저장해 사용자 노출 메시지 언어를 결정한다.
+SUPPORTED_LANGS = {"en", "ko"}
+DEFAULT_LANG = "en"
+current_lang: ContextVar[str] = ContextVar("current_lang", default=DEFAULT_LANG)
+
+
+@app.middleware("http")
+async def set_request_language(request: Request, call_next):
+    """요청 쿠키의 언어 설정을 현재 요청 컨텍스트에 반영한다.
+
+    요청 처리 중 생성된 asyncio 태스크(비디오 백그라운드 작업 등)는 컨텍스트를
+    복사하므로 동일한 언어 설정을 그대로 사용한다.
+
+    Args:
+        request: 수신한 HTTP 요청. "lang" 쿠키가 없거나 지원하지 않는 값이면 기본 언어(en)를 사용한다.
+        call_next: 다음 미들웨어/엔드포인트 호출 함수.
+
+    Returns:
+        다음 처리 단계에서 생성한 응답.
+    """
+    lang = request.cookies.get("lang", DEFAULT_LANG)
+    token = current_lang.set(lang if lang in SUPPORTED_LANGS else DEFAULT_LANG)
+    try:
+        return await call_next(request)
+    finally:
+        current_lang.reset(token)
+
+
+def tr(ko: str, en: str) -> str:
+    """현재 요청 언어에 맞는 사용자 노출 메시지를 선택한다.
+
+    Args:
+        ko: 한국어 메시지.
+        en: 영어 메시지.
+
+    Returns:
+        현재 언어가 "ko"이면 ko, 그 외에는 en.
+    """
+    return ko if current_lang.get() == "ko" else en
+
 # 디렉토리 설정
 STATIC_DIR = BASE_DIR / "static"
 UPLOADS_DIR = BASE_DIR / "uploads"
@@ -81,7 +126,7 @@ OUTPUTS_DIR.mkdir(exist_ok=True)
 def compute_asset_version() -> str:
     """정적 자산(css/js)의 최종 수정 시각 기반 캐시 무효화용 버전 문자열을 생성한다.
 
-    style.css와 main.js 중 가장 최근 수정 시각(epoch 초)을 버전으로 사용한다.
+    style.css, i18n.js, main.js 중 가장 최근 수정 시각(epoch 초)을 버전으로 사용한다.
     파일이 실제로 변경되었을 때만 버전이 바뀌므로, 변경이 없으면 브라우저 캐시가
     그대로 재사용되어 불필요한 재다운로드가 발생하지 않는다.
 
@@ -90,6 +135,7 @@ def compute_asset_version() -> str:
     """
     asset_files = [
         STATIC_DIR / "css" / "style.css",
+        STATIC_DIR / "js" / "i18n.js",
         STATIC_DIR / "js" / "main.js",
     ]
     latest_mtime = 0.0
@@ -238,7 +284,7 @@ def call_with_transient_retry(label: str, function, max_attempts: int = 5):
                 str(exc)[:160],
             )
             time.sleep(retry_delay)
-    raise RuntimeError(f"{label} 재시도 횟수를 초과했습니다.")
+    raise RuntimeError(tr(f"{label} 재시도 횟수를 초과했습니다.", f"{label} exceeded the maximum number of retries."))
 
 
 async def wait_for_video_operation(client, operation, poll_interval: float = 10) -> object:
@@ -290,7 +336,7 @@ async def download_video_with_retry(client, video_file, max_attempts: int = 5) -
                 str(exc)[:160],
             )
             await asyncio.sleep(retry_delay)
-    raise RuntimeError("비디오 다운로드 재시도 횟수를 초과했습니다.")
+    raise RuntimeError(tr("비디오 다운로드 재시도 횟수를 초과했습니다.", "Video download exceeded the maximum number of retries."))
 
 
 def validate_veo_options(model: str, resolution: str) -> None:
@@ -304,13 +350,13 @@ def validate_veo_options(model: str, resolution: str) -> None:
         HTTPException: 알 수 없는 모델이거나 해당 모델이 지원하지 않는 해상도인 경우.
     """
     if model not in VEO_MODELS:
-        raise HTTPException(status_code=400, detail="지원하지 않는 Veo 모델입니다.")
+        raise HTTPException(status_code=400, detail=tr("지원하지 않는 Veo 모델입니다.", "Unsupported Veo model."))
     if resolution not in VEO_RESOLUTIONS[model]:
         model_alias = VEO_MODELS[model]
         supported = ", ".join(sorted(VEO_RESOLUTIONS[model]))
         raise HTTPException(
             status_code=400,
-            detail=f"{model_alias}은(는) {resolution} 해상도를 지원하지 않습니다. 지원 해상도: {supported}",
+            detail=tr(f"{model_alias}은(는) {resolution} 해상도를 지원하지 않습니다. 지원 해상도: {supported}", f"{model_alias} does not support {resolution} resolution. Supported resolutions: {supported}"),
         )
 
 # 비디오 객체 저장소 (메모리)
@@ -583,7 +629,7 @@ def _generate_omni_video_sync(
     interaction = client.interactions.create(**create_kwargs)
     interaction_id = getattr(interaction, "id", None)
     if not interaction_id:
-        raise RuntimeError("Gemini Omni 백그라운드 작업 ID를 받지 못했습니다.")
+        raise RuntimeError(tr("Gemini Omni 백그라운드 작업 ID를 받지 못했습니다.", "Did not receive a Gemini Omni background job ID."))
     logger.info("Gemini Omni background interaction started: %s", interaction_id)
 
     for _ in range(180):
@@ -591,7 +637,7 @@ def _generate_omni_video_sync(
         if status == "completed":
             break
         if status in {"failed", "cancelled"}:
-            raise RuntimeError(f"Gemini Omni 동영상 생성 작업이 {status} 상태로 종료되었습니다.")
+            raise RuntimeError(tr(f"Gemini Omni 동영상 생성 작업이 {status} 상태로 종료되었습니다.", f"Gemini Omni video generation job ended with status {status}."))
         time.sleep(5)
         # include_input=False로 입력 이미지 base64가 응답에 다시 실려 400이 나는 것을 막는다.
         interaction = call_with_transient_retry(
@@ -599,12 +645,12 @@ def _generate_omni_video_sync(
             lambda: client.interactions.get(id=interaction_id, include_input=False),
         )
     else:
-        raise RuntimeError("Gemini Omni 동영상 생성 시간이 초과되었습니다.")
+        raise RuntimeError(tr("Gemini Omni 동영상 생성 시간이 초과되었습니다.", "Gemini Omni video generation timed out."))
 
     logger.info("Gemini Omni background interaction completed: %s", interaction_id)
     output_video = interaction.output_video
     if output_video is None:
-        raise RuntimeError("Gemini Omni 응답에 동영상 데이터가 없습니다.")
+        raise RuntimeError(tr("Gemini Omni 응답에 동영상 데이터가 없습니다.", "Gemini Omni response contains no video data."))
     if output_video.data:
         return interaction_id, base64.b64decode(output_video.data)
     if output_video.uri:
@@ -622,10 +668,10 @@ def _generate_omni_video_sync(
                 )
                 return interaction_id, video_bytes
             if state == "FAILED":
-                raise RuntimeError("Gemini Omni 동영상 파일 처리에 실패했습니다.")
+                raise RuntimeError(tr("Gemini Omni 동영상 파일 처리에 실패했습니다.", "Gemini Omni video file processing failed."))
             time.sleep(5)
-        raise RuntimeError("Gemini Omni 동영상 파일 처리 시간이 초과되었습니다.")
-    raise RuntimeError("Gemini Omni 응답에 다운로드 가능한 동영상이 없습니다.")
+        raise RuntimeError(tr("Gemini Omni 동영상 파일 처리 시간이 초과되었습니다.", "Gemini Omni video file processing timed out."))
+    raise RuntimeError(tr("Gemini Omni 응답에 다운로드 가능한 동영상이 없습니다.", "Gemini Omni response contains no downloadable video."))
 
 
 async def generate_omni_video(
@@ -654,7 +700,7 @@ async def generate_omni_video(
     logger.info("Gemini Omni video saved", extra={"output_filename": output_filename})
     return JSONResponse({
         "status": "success",
-        "message": "비디오가 생성되었습니다.",
+        "message": tr("비디오가 생성되었습니다.", "Video generated."),
         "output_file": f"/outputs/{output_filename}",
         "video_uuid": video_uuid,
         "model": OMNI_MODEL,
@@ -917,6 +963,130 @@ async def require_auth(request: Request, session_token: str = Cookie(None)):
         raise HTTPException(status_code=401, detail="Unauthorized")
     return True
 
+LOGIN_PAGE_STYLE = """
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 16px;
+            padding: 2.5rem;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+            width: 100%;
+        }
+        .login-title {
+            color: #1a1a2e;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+        .form-control:focus {
+            border-color: #4361ee;
+            box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.25);
+        }
+        .btn-login {
+            background: linear-gradient(135deg, #4361ee, #3a0ca3);
+            border: none;
+            padding: 0.75rem;
+            font-weight: 600;
+        }
+        .btn-login:hover {
+            background: linear-gradient(135deg, #3a0ca3, #4361ee);
+        }
+        .lang-select {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            width: auto;
+        }
+"""
+
+# 로그인 페이지 언어 동기화 스크립트.
+# localStorage의 언어 선택을 쿠키에 반영하고, 서버 렌더링 언어와 다르면 다시 불러온다.
+LOGIN_PAGE_SCRIPT = """
+    (function () {
+        const rendered = document.documentElement.lang;
+        const select = document.getElementById('langSelect');
+        function applyLang(lang) {
+            try { localStorage.setItem('lang', lang); } catch (e) {}
+            document.cookie = 'lang=' + lang + '; path=/; max-age=31536000; SameSite=Lax';
+            if (lang !== rendered) {
+                location.replace('/login' + location.search);
+            }
+        }
+        let stored = null;
+        try { stored = localStorage.getItem('lang'); } catch (e) {}
+        if ((stored === 'en' || stored === 'ko') && stored !== rendered) {
+            applyLang(stored);
+            return;
+        }
+        select.addEventListener('change', () => applyLang(select.value));
+    })();
+"""
+
+
+def render_login_page(alert_html: str = "", hide_form: bool = False) -> HTMLResponse:
+    """현재 요청 언어로 로그인 페이지를 렌더링한다.
+
+    언어는 "lang" 쿠키(미들웨어가 current_lang에 반영)로 결정되며, 페이지 우측 상단의
+    언어 선택으로 변경할 수 있다. 선택값은 브라우저 localStorage와 쿠키에 함께 저장된다.
+
+    Args:
+        alert_html: 폼 위에 표시할 알림 HTML(차단 안내, 로그인 실패 등). 없으면 빈 문자열.
+        hide_form: True이면 로그인 폼을 숨긴다. IP 차단 상태에서 사용한다.
+
+    Returns:
+        로그인 페이지 HTMLResponse.
+    """
+    lang = current_lang.get()
+    form_style = "style='display:none;'" if hide_form else ""
+    login_label = tr("로그인", "Login")
+    login_html = f'''
+    <!DOCTYPE html>
+    <html lang="{lang}">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Login - Google Gemini API Tools</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+        <style>{LOGIN_PAGE_STYLE}</style>
+    </head>
+    <body>
+        <select class="form-select form-select-sm lang-select" id="langSelect" aria-label="Language">
+            <option value="en" {"selected" if lang == "en" else ""}>English</option>
+            <option value="ko" {"selected" if lang == "ko" else ""}>한국어</option>
+        </select>
+        <div class="login-card">
+            <h3 class="login-title text-center">
+                <i class="bi bi-stars text-primary"></i> Gemini API Tools
+            </h3>
+            {alert_html}
+            <form method="post" action="/login" {form_style}>
+                <div class="mb-3">
+                    <label class="form-label">ID</label>
+                    <input type="text" class="form-control" name="login_id" required autofocus>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-control" name="login_password" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-login w-100">
+                    <i class="bi bi-box-arrow-in-right"></i> {login_label}
+                </button>
+            </form>
+        </div>
+        <script>{LOGIN_PAGE_SCRIPT}</script>
+    </body>
+    </html>
+    '''
+    return HTMLResponse(content=login_html)
+
+
 # API 엔드포인트
 @app.get("/login")
 async def login_page(request: Request, session_token: str = Cookie(None)):
@@ -928,75 +1098,13 @@ async def login_page(request: Request, session_token: str = Cookie(None)):
     client_ip = get_client_ip(request)
     blocked = is_ip_blocked(client_ip)
     
-    login_html = f'''
-    <!DOCTYPE html>
-    <html lang="ko">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Login - Google Gemini API Tools</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
-        <style>
-            body {{
-                background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }}
-            .login-card {{
-                background: rgba(255, 255, 255, 0.95);
-                border-radius: 16px;
-                padding: 2.5rem;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                max-width: 400px;
-                width: 100%;
-            }}
-            .login-title {{
-                color: #1a1a2e;
-                font-weight: 700;
-                margin-bottom: 1.5rem;
-            }}
-            .form-control:focus {{
-                border-color: #4361ee;
-                box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.25);
-            }}
-            .btn-login {{
-                background: linear-gradient(135deg, #4361ee, #3a0ca3);
-                border: none;
-                padding: 0.75rem;
-                font-weight: 600;
-            }}
-            .btn-login:hover {{
-                background: linear-gradient(135deg, #3a0ca3, #4361ee);
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="login-card">
-            <h3 class="login-title text-center">
-                <i class="bi bi-stars text-primary"></i> Gemini API Tools
-            </h3>
-            {"<div class='alert alert-danger'>IP가 일시적으로 차단되었습니다. 잠시 후 다시 시도하세요.</div>" if blocked else ""}
-            <form method="post" action="/login" {"style='display:none;'" if blocked else ""}>
-                <div class="mb-3">
-                    <label class="form-label">ID</label>
-                    <input type="text" class="form-control" name="login_id" required autofocus>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Password</label>
-                    <input type="password" class="form-control" name="login_password" required>
-                </div>
-                <button type="submit" class="btn btn-primary btn-login w-100">
-                    <i class="bi bi-box-arrow-in-right"></i> 로그인
-                </button>
-            </form>
-        </div>
-    </body>
-    </html>
-    '''
-    return HTMLResponse(content=login_html)
+    blocked_alert = (
+        "<div class='alert alert-danger'>"
+        + tr("IP가 일시적으로 차단되었습니다. 잠시 후 다시 시도하세요.",
+             "Your IP has been temporarily blocked. Please try again later.")
+        + "</div>"
+    ) if blocked else ""
+    return render_login_page(blocked_alert, hide_form=blocked)
 
 @app.post("/login")
 async def login_submit(
@@ -1046,77 +1154,13 @@ async def login_submit(
         else:
             # 실패 메시지와 함께 로그인 페이지 반환
             remaining = MAX_FAILED_ATTEMPTS - len(failed_login_attempts.get(client_ip, []))
-            error_html = f'''
-            <!DOCTYPE html>
-            <html lang="ko">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Login - Google Gemini API Tools</title>
-                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-                <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
-                <style>
-                    body {{
-                        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-                        min-height: 100vh;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                    }}
-                    .login-card {{
-                        background: rgba(255, 255, 255, 0.95);
-                        border-radius: 16px;
-                        padding: 2.5rem;
-                        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                        max-width: 400px;
-                        width: 100%;
-                    }}
-                    .login-title {{
-                        color: #1a1a2e;
-                        font-weight: 700;
-                        margin-bottom: 1.5rem;
-                    }}
-                    .form-control:focus {{
-                        border-color: #4361ee;
-                        box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.25);
-                    }}
-                    .btn-login {{
-                        background: linear-gradient(135deg, #4361ee, #3a0ca3);
-                        border: none;
-                        padding: 0.75rem;
-                        font-weight: 600;
-                    }}
-                    .btn-login:hover {{
-                        background: linear-gradient(135deg, #3a0ca3, #4361ee);
-                    }}
-                </style>
-            </head>
-            <body>
-                <div class="login-card">
-                    <h3 class="login-title text-center">
-                        <i class="bi bi-stars text-primary"></i> Gemini API Tools
-                    </h3>
-                    <div class="alert alert-warning">
-                        ID 또는 비밀번호가 올바르지 않습니다. (남은 시도: {remaining}회)
-                    </div>
-                    <form method="post" action="/login">
-                        <div class="mb-3">
-                            <label class="form-label">ID</label>
-                            <input type="text" class="form-control" name="login_id" required autofocus>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Password</label>
-                            <input type="password" class="form-control" name="login_password" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-login w-100">
-                            <i class="bi bi-box-arrow-in-right"></i> 로그인
-                        </button>
-                    </form>
-                </div>
-            </body>
-            </html>
-            '''
-            return HTMLResponse(content=error_html)
+            failed_alert = (
+                "<div class='alert alert-warning'>"
+                + tr(f"ID 또는 비밀번호가 올바르지 않습니다. (남은 시도: {remaining}회)",
+                     f"Invalid ID or password. ({remaining} attempts remaining)")
+                + "</div>"
+            )
+            return render_login_page(failed_alert)
 
 @app.get("/logout")
 async def logout(response: Response, session_token: str = Cookie(None)):
@@ -1294,7 +1338,7 @@ def _resolve_output_path(filename: str) -> Path:
     target = (OUTPUTS_DIR / filename).resolve()
     if outputs_root not in target.parents and target != outputs_root:
         logger.warning(f"Path traversal attempt blocked: {filename}")
-        raise HTTPException(status_code=400, detail="잘못된 파일 경로입니다.")
+        raise HTTPException(status_code=400, detail=tr("잘못된 파일 경로입니다.", "Invalid file path."))
     return target
 
 
@@ -1303,7 +1347,7 @@ async def get_thumbnail(filename: str):
     """썸네일 파일(.thumb, PNG 내용)을 image/png 타입으로 반환한다."""
     thumb_path = _resolve_output_path(filename)
     if not thumb_path.name.endswith(THUMBNAIL_SUFFIX):
-        raise HTTPException(status_code=404, detail="썸네일을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail=tr("썸네일을 찾을 수 없습니다.", "Thumbnail not found."))
     if not thumb_path.exists():
         original_path = thumb_path.with_suffix("")
         if original_path.exists() and original_path.suffix.lower() == ".mp4":
@@ -1311,7 +1355,7 @@ async def get_thumbnail(filename: str):
                 if not thumb_path.exists():
                     await asyncio.to_thread(create_video_thumbnail, original_path)
     if not thumb_path.exists():
-        raise HTTPException(status_code=404, detail="썸네일을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail=tr("썸네일을 찾을 수 없습니다.", "Thumbnail not found."))
     return FileResponse(thumb_path, media_type="image/png")
 
 
@@ -1332,10 +1376,10 @@ async def delete_output(filename: str):
         logger.info(f"Deleted thumbnail: {thumb_path.name}")
 
     if not deleted_any:
-        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail=tr("이미지를 찾을 수 없습니다.", "Image not found."))
 
     invalidate_gallery_cache()
-    return JSONResponse({"status": "success", "message": "이미지가 삭제되었습니다."})
+    return JSONResponse({"status": "success", "message": tr("이미지가 삭제되었습니다.", "Image deleted.")})
 
 
 @app.post("/api/text-to-image")
@@ -1361,10 +1405,10 @@ async def text_to_image(
             session = image_chat_sessions[session_id]
             previous_interaction_id = session.get("interaction_id")
             if not previous_interaction_id:
-                raise HTTPException(status_code=400, detail="편집할 이전 세션 정보가 없습니다.")
+                raise HTTPException(status_code=400, detail=tr("편집할 이전 세션 정보가 없습니다.", "No previous session to edit."))
             client = session.get("client")
             if client is None:
-                raise HTTPException(status_code=409, detail="이전 세션을 이어갈 수 없습니다. 새로 만들기를 선택해 주세요.")
+                raise HTTPException(status_code=409, detail=tr("이전 세션을 이어갈 수 없습니다. 새로 만들기를 선택해 주세요.", "Cannot continue the previous session. Please start a new one."))
             logger.info(f"Continuing interaction: {previous_interaction_id} (session: {session_id})")
         else:
             client = get_genai_client()
@@ -1395,7 +1439,7 @@ async def text_to_image(
             output_file = save_output_image(image_bytes, mime_type)
             response_data = {
                 "status": "success",
-                "message": "이미지가 생성되었습니다.",
+                "message": tr("이미지가 생성되었습니다.", "Image generated."),
                 "output_file": output_file,
                 "session_id": current_session_id,
             }
@@ -1408,14 +1452,14 @@ async def text_to_image(
             logger.info("No image generated, but text response received")
             return JSONResponse({
                 "status": "success",
-                "message": "텍스트 응답을 받았습니다.",
+                "message": tr("텍스트 응답을 받았습니다.", "Received a text response."),
                 "text_only": True,
                 "llm_response": text_response,
                 "session_id": current_session_id,
             })
 
         logger.error("No image or text data received from API")
-        raise HTTPException(status_code=500, detail="응답 데이터 없음")
+        raise HTTPException(status_code=500, detail=tr("응답 데이터 없음", "No response data"))
 
     except HTTPException:
         raise
@@ -1450,10 +1494,10 @@ async def image_to_image(
             session = image_chat_sessions[session_id]
             previous_interaction_id = session.get("interaction_id")
             if not previous_interaction_id:
-                raise HTTPException(status_code=400, detail="편집할 이전 세션 정보가 없습니다.")
+                raise HTTPException(status_code=400, detail=tr("편집할 이전 세션 정보가 없습니다.", "No previous session to edit."))
             client = session.get("client")
             if client is None:
-                raise HTTPException(status_code=409, detail="이전 세션을 이어갈 수 없습니다. 새로 만들기를 선택해 주세요.")
+                raise HTTPException(status_code=409, detail=tr("이전 세션을 이어갈 수 없습니다. 새로 만들기를 선택해 주세요.", "Cannot continue the previous session. Please start a new one."))
             # 편집 중 추가 참조 이미지를 올린 경우 함께 전달
             if files:
                 input_images = await read_upload_images(files[:14])
@@ -1461,7 +1505,7 @@ async def image_to_image(
         else:
             # 새 세션: 업로드 이미지 + 프롬프트로 생성
             if not files:
-                raise HTTPException(status_code=400, detail="새로 만들기 모드에서는 이미지 파일이 필요합니다.")
+                raise HTTPException(status_code=400, detail=tr("새로 만들기 모드에서는 이미지 파일이 필요합니다.", "An image file is required to start a new session."))
             # 두 모델 모두 최대 14장 이미지 참조 지원
             files_to_process = files[:14]
             logger.info(f"Processing {len(files_to_process)} images for image-to-image with model {model}")
@@ -1493,7 +1537,7 @@ async def image_to_image(
             output_file = save_output_image(image_bytes, mime_type)
             response_data = {
                 "status": "success",
-                "message": "이미지가 생성되었습니다.",
+                "message": tr("이미지가 생성되었습니다.", "Image generated."),
                 "output_file": output_file,
                 "session_id": current_session_id,
             }
@@ -1506,14 +1550,14 @@ async def image_to_image(
             logger.info("Text-only response received (no image generated)")
             return JSONResponse({
                 "status": "success",
-                "message": "텍스트 응답을 받았습니다.",
+                "message": tr("텍스트 응답을 받았습니다.", "Received a text response."),
                 "llm_response": text_response,
                 "text_only": True,
                 "session_id": current_session_id,
             })
 
         logger.error("No image data or text response received from API")
-        raise HTTPException(status_code=500, detail="이미지 생성 실패: 응답에 이미지 데이터가 없습니다.")
+        raise HTTPException(status_code=500, detail=tr("이미지 생성 실패: 응답에 이미지 데이터가 없습니다.", "Image generation failed: the response contains no image data."))
 
     except HTTPException:
         raise
@@ -1557,24 +1601,24 @@ async def text_to_video(
         
         if not operation.response or not operation.response.generated_videos:
             # RAI 필터링 이유 확인
-            error_detail = "비디오 생성 실패"
+            error_detail = tr("비디오 생성 실패", "Video generation failed")
             if operation.response and hasattr(operation.response, 'rai_media_filtered_reasons'):
                 filtered_reasons = operation.response.rai_media_filtered_reasons
                 if filtered_reasons:
                     reasons_text = "\n".join(filtered_reasons)
-                    error_detail = f"비디오 생성 실패:\n{reasons_text}"
+                    error_detail = tr(f"비디오 생성 실패:\n{reasons_text}", f"Video generation failed:\n{reasons_text}")
                     logger.error(f"No videos generated. Filtered reasons: {filtered_reasons}")
                 else:
-                    error_detail = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                    error_detail = tr("비디오 생성 실패: 응답에 비디오가 없습니다.", "Video generation failed: the response contains no video.")
                     logger.error(f"No videos generated. Operation response: {operation.response}")
             else:
-                error_detail = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                error_detail = tr("비디오 생성 실패: 응답에 비디오가 없습니다.", "Video generation failed: the response contains no video.")
                 logger.error(f"No videos generated. Operation response: {operation.response}")
             raise HTTPException(status_code=500, detail=error_detail)
         
         if len(operation.response.generated_videos) == 0:
             logger.error("Generated videos list is empty")
-            raise HTTPException(status_code=500, detail="비디오 생성 실패: 생성된 비디오가 없습니다.")
+            raise HTTPException(status_code=500, detail=tr("비디오 생성 실패: 생성된 비디오가 없습니다.", "Video generation failed: no video was generated."))
         
         # 비디오 다운로드
         generated_video = operation.response.generated_videos[0]
@@ -1592,7 +1636,7 @@ async def text_to_video(
         
         return JSONResponse({
             "status": "success",
-            "message": "비디오가 생성되었습니다.",
+            "message": tr("비디오가 생성되었습니다.", "Video generated."),
             "output_file": f"/outputs/{output_filename}",
             "video_uuid": video_uuid,
             "model": model,
@@ -1634,7 +1678,7 @@ async def image_to_video(
         if model == VEO_LITE_MODEL and len(files_to_process) > 1:
             raise HTTPException(
                 status_code=400,
-                detail="Veo 3.1 Lite는 시작 이미지 1장만 지원합니다. 여러 참조 이미지는 Standard 또는 Fast를 선택하세요.",
+                detail=tr("Veo 3.1 Lite는 시작 이미지 1장만 지원합니다. 여러 참조 이미지는 Standard 또는 Fast를 선택하세요.", "Veo 3.1 Lite supports only one starting image. Choose Standard or Fast for multiple reference images."),
             )
         if model == OMNI_MODEL:
             input_images = await read_upload_images(files_to_process)
@@ -1736,24 +1780,24 @@ async def image_to_video(
         
         if not operation.response or not operation.response.generated_videos:
             # RAI 필터링 이유 확인
-            error_detail = "비디오 생성 실패"
+            error_detail = tr("비디오 생성 실패", "Video generation failed")
             if operation.response and hasattr(operation.response, 'rai_media_filtered_reasons'):
                 filtered_reasons = operation.response.rai_media_filtered_reasons
                 if filtered_reasons:
                     reasons_text = "\n".join(filtered_reasons)
-                    error_detail = f"비디오 생성 실패:\n{reasons_text}"
+                    error_detail = tr(f"비디오 생성 실패:\n{reasons_text}", f"Video generation failed:\n{reasons_text}")
                     logger.error(f"No videos generated. Filtered reasons: {filtered_reasons}")
                 else:
-                    error_detail = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                    error_detail = tr("비디오 생성 실패: 응답에 비디오가 없습니다.", "Video generation failed: the response contains no video.")
                     logger.error(f"No videos generated. Operation response: {operation.response}")
             else:
-                error_detail = "비디오 생성 실패: 응답에 비디오가 없습니다."
+                error_detail = tr("비디오 생성 실패: 응답에 비디오가 없습니다.", "Video generation failed: the response contains no video.")
                 logger.error(f"No videos generated. Operation response: {operation.response}")
             raise HTTPException(status_code=500, detail=error_detail)
         
         if len(operation.response.generated_videos) == 0:
             logger.error("Generated videos list is empty")
-            raise HTTPException(status_code=500, detail="비디오 생성 실패: 생성된 비디오가 없습니다.")
+            raise HTTPException(status_code=500, detail=tr("비디오 생성 실패: 생성된 비디오가 없습니다.", "Video generation failed: no video was generated."))
         
         # 비디오 다운로드
         video = operation.response.generated_videos[0]
@@ -1777,7 +1821,7 @@ async def image_to_video(
         
         return JSONResponse({
             "status": "success",
-            "message": "비디오가 생성되었습니다.",
+            "message": tr("비디오가 생성되었습니다.", "Video generated."),
             "output_file": f"/outputs/{output_filename}",
             "video_uuid": video_uuid,
             "model": model,
@@ -1805,7 +1849,7 @@ async def extend_video(
         # 메모리에서 비디오 객체 가져오기
         if video_uuid not in video_objects_cache:
             logger.error(f"Video UUID not found in cache: {video_uuid}")
-            raise HTTPException(status_code=400, detail=f"비디오를 찾을 수 없습니다. UUID: {video_uuid}")
+            raise HTTPException(status_code=400, detail=tr(f"비디오를 찾을 수 없습니다. UUID: {video_uuid}", f"Video not found. UUID: {video_uuid}"))
         
         cached_video = video_objects_cache[video_uuid]
         if isinstance(cached_video, dict):
@@ -1820,12 +1864,12 @@ async def extend_video(
         if model == OMNI_MODEL:
             previous_interaction_id = cached_video.get("interaction_id")
             if not previous_interaction_id:
-                raise HTTPException(status_code=400, detail="Gemini Omni 편집 세션을 찾을 수 없습니다.")
+                raise HTTPException(status_code=400, detail=tr("Gemini Omni 편집 세션을 찾을 수 없습니다.", "Gemini Omni editing session not found."))
             extension_count = cached_video.get("edit_count", 0)
             if extension_count >= OMNI_MAX_VIDEO_EXTENSIONS:
                 raise HTTPException(
                     status_code=400,
-                    detail="Gemini Omni 비디오는 최대 누적 40초까지만 연장할 수 있습니다.",
+                    detail=tr("Gemini Omni 비디오는 최대 누적 40초까지만 연장할 수 있습니다.", "Gemini Omni videos can be extended up to a total of 40 seconds."),
                 )
 
             interaction_id, video_bytes = await asyncio.to_thread(
@@ -1850,7 +1894,7 @@ async def extend_video(
             del video_objects_cache[video_uuid]
             return JSONResponse({
                 "status": "success",
-                "message": "Gemini Omni 비디오가 10초 연장되었습니다.",
+                "message": tr("Gemini Omni 비디오가 10초 연장되었습니다.", "Gemini Omni video extended by 10 seconds."),
                 "output_file": f"/outputs/{output_filename}",
                 "video_uuid": edited_video_uuid,
                 "model": OMNI_MODEL,
@@ -1862,9 +1906,9 @@ async def extend_video(
             })
 
         if model == VEO_LITE_MODEL:
-            raise HTTPException(status_code=400, detail="Veo 3.1 Lite로 생성한 비디오는 확장할 수 없습니다.")
+            raise HTTPException(status_code=400, detail=tr("Veo 3.1 Lite로 생성한 비디오는 확장할 수 없습니다.", "Videos generated with Veo 3.1 Lite cannot be extended."))
         if resolution != "720p":
-            raise HTTPException(status_code=400, detail="비디오 확장은 720p 해상도만 지원합니다.")
+            raise HTTPException(status_code=400, detail=tr("비디오 확장은 720p 해상도만 지원합니다.", "Video extension supports 720p resolution only."))
 
         client = get_genai_client()
         
@@ -1895,24 +1939,24 @@ async def extend_video(
         
         if not operation.response or not operation.response.generated_videos:
             # RAI 필터링 이유 확인
-            error_detail = "비디오 확장 실패"
+            error_detail = tr("비디오 확장 실패", "Video extension failed")
             if operation.response and hasattr(operation.response, 'rai_media_filtered_reasons'):
                 filtered_reasons = operation.response.rai_media_filtered_reasons
                 if filtered_reasons:
                     reasons_text = "\n".join(filtered_reasons)
-                    error_detail = f"비디오 확장 실패:\n{reasons_text}"
+                    error_detail = tr(f"비디오 확장 실패:\n{reasons_text}", f"Video extension failed:\n{reasons_text}")
                     logger.error(f"No videos generated. Filtered reasons: {filtered_reasons}")
                 else:
-                    error_detail = "비디오 확장 실패: 응답에 비디오가 없습니다."
+                    error_detail = tr("비디오 확장 실패: 응답에 비디오가 없습니다.", "Video extension failed: the response contains no video.")
                     logger.error(f"No videos generated. Operation response: {operation.response}")
             else:
-                error_detail = "비디오 확장 실패: 응답에 비디오가 없습니다."
+                error_detail = tr("비디오 확장 실패: 응답에 비디오가 없습니다.", "Video extension failed: the response contains no video.")
                 logger.error(f"No videos generated. Operation response: {operation.response}")
             raise HTTPException(status_code=500, detail=error_detail)
         
         if len(operation.response.generated_videos) == 0:
             logger.error("Generated videos list is empty")
-            raise HTTPException(status_code=500, detail="비디오 확장 실패: 생성된 비디오가 없습니다.")
+            raise HTTPException(status_code=500, detail=tr("비디오 확장 실패: 생성된 비디오가 없습니다.", "Video extension failed: no video was generated."))
         
         # 비디오 다운로드
         generated_video = operation.response.generated_videos[0]
@@ -1936,7 +1980,7 @@ async def extend_video(
         
         return JSONResponse({
             "status": "success",
-            "message": "비디오가 확장되었습니다.",
+            "message": tr("비디오가 확장되었습니다.", "Video extended."),
             "output_file": f"/outputs/{output_filename}",
             "video_uuid": extended_video_uuid,
             "model": model,
@@ -1984,7 +2028,7 @@ async def start_extend_video_job(
 ):
     """비디오 확장 작업을 백그라운드에서 시작하고 즉시 작업 ID를 반환한다."""
     if video_uuid not in video_objects_cache:
-        raise HTTPException(status_code=400, detail="확장할 비디오를 찾을 수 없습니다.")
+        raise HTTPException(status_code=400, detail=tr("확장할 비디오를 찾을 수 없습니다.", "Video to extend not found."))
     job_id = start_video_job(extend_video(prompt, video_uuid, resolution, aspect_ratio))
     return JSONResponse({"status": "queued", "job_id": job_id}, status_code=202)
 
@@ -1994,7 +2038,7 @@ async def get_video_job(job_id: str):
     """백그라운드 비디오 작업의 현재 상태 또는 최종 결과를 반환한다."""
     job = video_jobs.get(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="비디오 작업을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail=tr("비디오 작업을 찾을 수 없습니다.", "Video job not found."))
     return JSONResponse(job)
 
 @app.post("/api/text-to-speech")
@@ -2056,11 +2100,11 @@ async def text_to_speech(
                 
                 return JSONResponse({
                     "status": "success",
-                    "message": "음성이 생성되었습니다.",
+                    "message": tr("음성이 생성되었습니다.", "Speech generated."),
                     "output_file": f"/outputs/{output_filename}"
                 })
         
-        raise HTTPException(status_code=500, detail="음성 생성 실패")
+        raise HTTPException(status_code=500, detail=tr("음성 생성 실패", "Speech generation failed"))
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2098,7 +2142,7 @@ async def create_prompt(prompt_data: PromptCreate):
     
     return JSONResponse({
         "status": "success",
-        "message": "프롬프트가 저장되었습니다.",
+        "message": tr("프롬프트가 저장되었습니다.", "Prompt saved."),
         "id": prompt_id
     })
 
@@ -2116,7 +2160,7 @@ async def update_prompt(prompt_id: int, prompt_data: PromptCreate):
     
     return JSONResponse({
         "status": "success",
-        "message": "프롬프트가 수정되었습니다."
+        "message": tr("프롬프트가 수정되었습니다.", "Prompt updated.")
     })
 
 @app.delete("/api/prompts/{prompt_id}")
@@ -2130,12 +2174,50 @@ async def delete_prompt(prompt_id: int):
     
     return JSONResponse({
         "status": "success",
-        "message": "프롬프트가 삭제되었습니다."
+        "message": tr("프롬프트가 삭제되었습니다.", "Prompt deleted.")
     })
+
+def open_browser_when_ready(url: str, delay_seconds: float = 1.5) -> None:
+    """서버 기동 직후 기본 웹 브라우저로 앱 주소를 연다.
+
+    브라우저가 없는 환경에서도 서버 실행에 영향을 주지 않도록 다음 경우에는 아무것도 하지 않는다.
+
+    - 환경 변수 OPEN_BROWSER가 "false", "0", "no", "off" 중 하나인 경우
+    - Linux에서 GUI 디스플레이(DISPLAY / WAYLAND_DISPLAY)가 없는 경우.
+      이 경우 webbrowser 모듈이 lynx, w3m 같은 콘솔 브라우저를 실행하고 종료를 기다릴 수 있어 원천 차단한다.
+
+    브라우저 실행은 데몬 타이머 스레드에서 수행하므로 uvicorn 기동을 막지 않으며,
+    브라우저를 찾지 못하거나 실행에 실패해도 경고 로그만 남긴다.
+
+    Args:
+        url: 브라우저로 열 주소. 예: "http://localhost:33000".
+        delay_seconds: 서버가 요청을 받을 준비를 마칠 때까지 기다릴 시간(초).
+    """
+    if os.getenv("OPEN_BROWSER", "true").strip().lower() in {"false", "0", "no", "off"}:
+        logger.info("Browser auto-open disabled by OPEN_BROWSER")
+        return
+    if sys.platform.startswith("linux") and not (os.getenv("DISPLAY") or os.getenv("WAYLAND_DISPLAY")):
+        logger.info("No GUI display detected; skipping browser auto-open")
+        return
+
+    def _open() -> None:
+        try:
+            if webbrowser.open(url):
+                logger.info(f"Opened browser at {url}")
+            else:
+                logger.warning(f"No web browser available; open {url} manually")
+        except webbrowser.Error as exc:
+            logger.warning(f"Failed to open browser at {url}: {exc}")
+
+    timer = threading.Timer(delay_seconds, _open)
+    timer.daemon = True
+    timer.start()
+
 
 if __name__ == "__main__":
     import uvicorn
     logger.info("Starting Gemini API Tools Web Application on port 33000")
+    open_browser_when_ready("http://localhost:33000")
     uvicorn.run(
         app, 
         host="localhost", 

@@ -1,5 +1,7 @@
 # Google Gemini API Tools - Web Application
 
+[English](README.en.md) | **한국어**
+
 FastAPI 기반 웹 애플리케이션으로 Google Gemini API를 활용한 이미지, 비디오, 음성 생성 도구
 
 
@@ -21,6 +23,7 @@ FastAPI 기반 웹 애플리케이션으로 Google Gemini API를 활용한 이�
 - 실시간 로그 표시
 - 생성된 파일 미리보기 및 다운로드
 - 프롬프트 저장/관리
+- 영어/한국어 UI 지원 (기본값 영어, 선택한 언어는 브라우저에 저장)
 
 ## 설치 및 실행
 
@@ -43,6 +46,9 @@ uv run app.py
 ```
 
 uv가 자동으로 가상환경 생성 및 의존성 설치를 처리.
+서버가 뜨면 기본 브라우저로 http://localhost:33000 이 자동으로 열린다.
+- 끄려면 `.env`에 `OPEN_BROWSER=false` 지정
+- GUI 디스플레이가 없는 Linux(ssh 접속 서버, systemd 등)에서는 자동으로 건너뛰며, 브라우저를 찾지 못해도 서버 실행에는 영향이 없다
 
 3. **접속**
 - 로컬: http://localhost:33000
@@ -147,7 +153,8 @@ start_server.bat
 ├── app.py                      # FastAPI 백엔드
 ├── pyproject.toml              # uv 프로젝트 설정
 ├── requirements.txt            # Python 의존성
-├── README.md                   # 문서
+├── README.md                   # 문서 (한국어)
+├── README.en.md                # 문서 (영어)
 ├── .gitignore                  # Git 설정
 ├── start_server.sh             # 서버 시작 스크립트 (Linux/Mac)
 ├── stop_server.sh              # 서버 중지 스크립트 (Linux/Mac)
@@ -161,6 +168,7 @@ start_server.bat
 │   ├── css/
 │   │   └── style.css          # 커스텀 CSS
 │   └── js/
+│       ├── i18n.js            # UI 번역 사전 (영어/한국어)
 │       └── main.js            # 클라이언트 JavaScript
 ├── uploads/                   # 업로드된 파일 임시 저장 (자동 생성)
 └── outputs/                   # 생성된 파일 저장 (자동 생성)
@@ -193,6 +201,10 @@ start_server.bat
 5. 프롬프트 입력
 6. 실행 버튼 클릭
 7. 결과 확인 및 다운로드
+
+### 언어 설정
+
+페이지(또는 로그인 페이지) 우측 상단의 언어 선택으로 영어/한국어를 전환한다. 기본값은 영어이며, 선택한 언어는 브라우저 `localStorage`에 저장되어 다음 접속 시에도 유지된다. 서버 오류 메시지와 로그인 페이지도 같은 언어로 표시되도록 선택값을 `lang` 쿠키에도 함께 저장한다.
 
 ## 기술 스택
 

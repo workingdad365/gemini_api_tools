@@ -713,3 +713,11 @@ h6 {
         display: block;
     }
 }
+
+/* 언어 선택 드롭다운 (네비게이션 바)
+   공통 .form-select 패딩이 화살표 영역을 덮어쓰므로 우측 여백을 화살표 폭만큼 확보한다. */
+.lang-select {
+    width: auto;
+    padding: 0.25rem 2.25rem 0.25rem 0.75rem;
+    background-position: right 0.75rem center;
+}

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
@@ -21,7 +21,7 @@
         <div class="container-fluid">
             <div class="d-flex align-items-center">
                 <button class="btn btn-outline-secondary btn-sm me-2" id="galleryToggleBtn" type="button"
-                    data-bs-toggle="tooltip" data-bs-placement="bottom" title="갤러리 보이기/숨기기">
+                    data-bs-toggle="tooltip" data-bs-placement="bottom" title="Show/hide gallery" data-i18n-title="nav.galleryToggle">
                     <i class="bi bi-images"></i>
                 </button>
                 <span class="navbar-brand mb-0 h1 text-gradient d-flex align-items-center">
@@ -29,9 +29,16 @@
                     <img src="/static/img/logo.png" alt="Logo" class="ms-2" style="height: 32px;">
                 </span>
             </div>
-            <a href="/logout" class="btn btn-danger btn-sm" data-bs-toggle="tooltip" data-bs-placement="bottom" title="로그아웃">
-                <i class="bi bi-box-arrow-right"></i>
-            </a>
+            <div class="d-flex align-items-center gap-2">
+                <select class="form-select form-select-sm lang-select" id="langSelect" aria-label="Language"
+                    data-i18n-title="nav.language" title="Language">
+                    <option value="en">English</option>
+                    <option value="ko">한국어</option>
+                </select>
+                <a href="/logout" class="btn btn-danger btn-sm" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Logout" data-i18n-title="nav.logout">
+                    <i class="bi bi-box-arrow-right"></i>
+                </a>
+            </div>
         </div>
     </nav>
 
@@ -39,13 +46,13 @@
     <!-- 좌측 갤러리 사이드바 -->
     <aside class="gallery-sidebar" id="gallerySidebar">
         <div class="gallery-sidebar-header">
-            <span class="fw-bold"><i class="bi bi-collection-play me-1"></i> 생성된 미디어</span>
-            <button class="btn btn-sm btn-outline-secondary" id="galleryCloseBtn" type="button" title="숨기기">
+            <span class="fw-bold"><i class="bi bi-collection-play me-1"></i> <span data-i18n="gallery.title">Generated Media</span></span>
+            <button class="btn btn-sm btn-outline-secondary" id="galleryCloseBtn" type="button" title="Hide" data-i18n-title="gallery.hide">
                 <i class="bi bi-chevron-left"></i>
             </button>
         </div>
         <div class="gallery-thumbs" id="galleryThumbs">
-            <div class="text-muted small text-center p-3" id="galleryEmpty">아직 생성된 미디어가 없습니다.</div>
+            <div class="text-muted small text-center p-3" id="galleryEmpty" data-i18n="gallery.empty">No media generated yet.</div>
         </div>
     </aside>
     <!-- 모바일 오버레이 배경 -->
@@ -69,7 +76,7 @@
                 <!-- 작업 선택 -->
                 <div class="card mb-3 shadow border-0">
                     <div class="card-header card-header-custom d-flex justify-content-between align-items-center py-2">
-                        <h5 class="mb-0"><i class="bi bi-list-task me-2"></i> 작업 선택</h5>
+                        <h5 class="mb-0"><i class="bi bi-list-task me-2"></i> <span data-i18n="op.title">Select Task</span></h5>
                         <select class="form-select form-select-sm" id="operationType" style="width: auto; min-width: 160px;">
                             <option value="text-to-image">Text to Image</option>
                             <option value="image-to-image">Image to Image</option>
@@ -83,17 +90,17 @@
                 <!-- 입력 파일 -->
                 <div class="card mb-4 shadow border-0" id="fileInputCard" style="display: none;">
                     <div class="card-header card-header-custom">
-                        <h5 class="mb-0" id="fileInputCardTitle"><i class="bi bi-file-earmark-image me-2"></i> 입력 파일 (최대
-                            3장)</h5>
+                        <h5 class="mb-0"><i class="bi bi-file-earmark-image me-2"></i> <span id="fileInputCardTitle"
+                                data-i18n="file.title" data-i18n-params='{"n":3}'>Input Files (max 3)</span></h5>
                     </div>
                     <div class="card-body p-4">
                         <div class="drop-zone" id="dropZone">
                             <div class="mb-3">
                                 <i class="bi bi-cloud-arrow-up display-4 text-primary opacity-50"></i>
                             </div>
-                            <p class="mb-3 text-muted" id="dropZoneText">여기에 파일을 드래그앤드롭하거나</p>
+                            <p class="mb-3 text-muted" id="dropZoneText" data-i18n="file.drop">Drag and drop files here, or</p>
                             <label for="fileInput" class="btn btn-outline-primary px-4 rounded-pill">
-                                <i class="bi bi-folder2-open me-2"></i> 파일 선택
+                                <i class="bi bi-folder2-open me-2"></i> <span data-i18n="file.choose">Choose Files</span>
                             </label>
                             <input type="file" id="fileInput" class="d-none" accept="image/*" multiple>
                             <p class="mt-2 mb-0 text-muted small" id="fileInputHint"></p>
@@ -106,15 +113,15 @@
                 <!-- 설정 -->
                 <div class="card mb-4 shadow border-0">
                     <div class="card-header card-header-custom d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-gear me-2"></i> 설정</h5>
+                        <h5 class="mb-0"><i class="bi bi-gear me-2"></i> <span data-i18n="settings.title">Settings</span></h5>
                         <button class="btn btn-sm btn-outline-secondary" id="toggleSettingsBtn" type="button">
-                            <i class="bi bi-chevron-down me-1"></i> 보이기
+                            <i class="bi bi-chevron-down me-1"></i> <span data-i18n="settings.show">Show</span>
                         </button>
                     </div>
                     <div class="card-body p-4 d-none" id="settingsBody">
                         <!-- 이미지 생성 모델 선택 -->
                         <div class="mb-4" id="imageModelGroup" style="display: none;">
-                            <label class="form-label fw-bold text-dark">이미지 생성 모델</label>
+                            <label class="form-label fw-bold text-dark" data-i18n="settings.imageModel">Image Model</label>
                             <select class="form-select" id="imageModel">
                                 <!-- 서버 config API에서 동적으로 로드 -->
                             </select>
@@ -129,7 +136,7 @@
 
                         <!-- 이미지 해상도 -->
                         <div class="mb-4" id="imageResolutionGroup" style="display: none;">
-                            <label class="form-label fw-bold text-dark">이미지 해상도</label>
+                            <label class="form-label fw-bold text-dark" data-i18n="settings.imageResolution">Image Resolution</label>
                             <select class="form-select" id="imageResolution">
                                 <!-- 모델에 따라 동적으로 업데이트 -->
                             </select>
@@ -142,7 +149,7 @@
 
                         <!-- 이미지 비율 -->
                         <div class="mb-4" id="imageRatioGroup">
-                            <label class="form-label fw-bold text-dark">이미지 비율</label>
+                            <label class="form-label fw-bold text-dark" data-i18n="settings.imageRatio">Aspect Ratio</label>
                             <select class="form-select" id="aspectRatio">
                                 <!-- 모델에 따라 동적으로 업데이트 -->
                             </select>
@@ -152,22 +159,22 @@
                         <div id="videoSettingsGroup" style="display: none;">
                             <div class="row">
                                 <div class="col-md-4 mb-4">
-                                    <label class="form-label fw-bold text-dark">비디오 생성 모델</label>
+                                    <label class="form-label fw-bold text-dark" data-i18n="settings.videoModel">Video Model</label>
                                     <select class="form-select" id="videoModel">
                                         <!-- 서버 config API에서 동적으로 로드 -->
                                     </select>
                                 </div>
                                 <div class="col-md-4 mb-4">
-                                    <label class="form-label fw-bold text-dark">비디오 해상도</label>
+                                    <label class="form-label fw-bold text-dark" data-i18n="settings.videoResolution">Video Resolution</label>
                                     <select class="form-select" id="videoResolution">
                                         <!-- 모델에 따라 동적으로 업데이트 -->
                                     </select>
                                 </div>
                                 <div class="col-md-4 mb-4">
-                                    <label class="form-label fw-bold text-dark">비디오 비율</label>
+                                    <label class="form-label fw-bold text-dark" data-i18n="settings.videoRatio">Video Aspect Ratio</label>
                                     <select class="form-select" id="videoAspectRatio">
-                                        <option value="16:9">16:9 (가로)</option>
-                                        <option value="9:16" selected>9:16 (세로)</option>
+                                        <option value="16:9" data-i18n="settings.landscape">16:9 (Landscape)</option>
+                                        <option value="9:16" selected data-i18n="settings.portrait">9:16 (Portrait)</option>
                                     </select>
                                 </div>
                             </div>
@@ -175,7 +182,7 @@
 
                         <!-- 음성 설정 -->
                         <div class="mb-4" id="voiceSettingsGroup" style="display: none;">
-                            <label class="form-label fw-bold text-dark">음성 선택</label>
+                            <label class="form-label fw-bold text-dark" data-i18n="settings.voice">Voice</label>
                             <select class="form-select" id="voiceName">
                                 <option value="Zephyr" selected>Zephyr -- Bright</option>
                                 <option value="Puck">Puck -- Upbeat</option>
@@ -212,11 +219,11 @@
 
                         <div class="pricing-summary" id="pricingSummary" aria-live="polite">
                             <div class="pricing-summary-header">
-                                <span><i class="bi bi-currency-dollar me-1"></i> 예상 비용</span>
+                                <span><i class="bi bi-currency-dollar me-1"></i> <span data-i18n="pricing.title">Estimated Cost</span></span>
                                 <a id="pricingSourceLink" href="https://ai.google.dev/gemini-api/docs/pricing"
-                                    target="_blank" rel="noopener noreferrer">공식 가격표</a>
+                                    target="_blank" rel="noopener noreferrer" data-i18n="pricing.source">Official pricing</a>
                             </div>
-                            <div class="pricing-summary-value" id="pricingValue">계산 중...</div>
+                            <div class="pricing-summary-value" id="pricingValue">Calculating...</div>
                             <div class="pricing-summary-detail" id="pricingDetail"></div>
                         </div>
                     </div>
@@ -225,29 +232,30 @@
                 <!-- 프롬프트 입력 -->
                 <div class="card mb-3 shadow border-0">
                     <div class="card-header card-header-custom d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 text-nowrap"><i class="bi bi-chat-left-text me-2"></i> 프롬프트 입력</h5>
+                        <h5 class="mb-0 text-nowrap"><i class="bi bi-chat-left-text me-2"></i> <span data-i18n="prompt.title">Prompt</span></h5>
                         <div>
                             <button class="btn btn-sm btn-outline-secondary me-1" id="savePromptBtn">
-                                <i class="bi bi-save"></i> 저장
+                                <i class="bi bi-save"></i> <span data-i18n="prompt.save">Save</span>
                             </button>
                             <button class="btn btn-sm btn-outline-secondary" id="loadPromptBtn">
-                                <i class="bi bi-list-ul"></i> 목록
+                                <i class="bi bi-list-ul"></i> <span data-i18n="prompt.list">List</span>
                             </button>
                         </div>
                     </div>
                     <div class="card-body p-4">
                         <textarea class="form-control" id="promptText" rows="6"
-                            placeholder="프롬프트를 입력하세요... (프롬프트는 한국어로 작성해도 됩니다)"></textarea>
+                            placeholder="Enter your prompt... (any language is fine)"
+                            data-i18n-placeholder="prompt.placeholder"></textarea>
                     </div>
                 </div>
 
                 <!-- 실행 버튼 -->
                 <div class="text-center mb-3">
                     <button class="btn btn-secondary btn-lg rounded-pill px-4 py-2 shadow me-2 d-none" id="newSessionBtn">
-                        <i class="bi bi-play-circle me-2"></i> <span class="fw-bold fs-6">실행하기</span>
+                        <i class="bi bi-play-circle me-2"></i> <span class="fw-bold fs-6" data-i18n="btn.run">Run</span>
                     </button>
                     <button class="btn btn-primary btn-lg rounded-pill px-4 py-2 shadow" id="executeBtn">
-                        <i class="bi bi-play-circle-fill me-2"></i> <span class="fw-bold fs-6" id="executeBtnLabel">실행하기</span>
+                        <i class="bi bi-play-circle-fill me-2"></i> <span class="fw-bold fs-6" id="executeBtnLabel" data-i18n="btn.run">Run</span>
                     </button>
                 </div>
             </div>
@@ -258,16 +266,16 @@
                 <div class="alert alert-info d-none border-0 shadow" id="progressAlert" role="alert">
                     <div class="d-flex align-items-center justify-content-center">
                         <div class="spinner-border spinner-border-sm me-3" role="status">
-                            <span class="visually-hidden">처리 중...</span>
+                            <span class="visually-hidden" data-i18n="progress.processing">Processing...</span>
                         </div>
-                        <span id="progressMessage" class="fw-medium">처리 중...</span>
+                        <span id="progressMessage" class="fw-medium">Processing...</span>
                     </div>
                 </div>
 
                 <!-- 결과 -->
                 <div class="card shadow border-0 d-none mb-4" id="resultCard">
                     <div class="card-header card-header-custom">
-                        <h5 class="mb-0"><i class="bi bi-check-circle me-2"></i> 결과</h5>
+                        <h5 class="mb-0"><i class="bi bi-check-circle me-2"></i> <span data-i18n="result.title">Result</span></h5>
                     </div>
                     <div class="card-body text-center p-4" id="resultContent">
                     </div>
@@ -276,11 +284,11 @@
                 <!-- 로그 -->
                 <div class="card shadow border-0 log-card">
                     <div class="card-header card-header-custom">
-                        <h5 class="mb-0"><i class="bi bi-terminal me-2"></i> 로그</h5>
+                        <h5 class="mb-0"><i class="bi bi-terminal me-2"></i> <span data-i18n="log.title">Log</span></h5>
                     </div>
                     <div class="card-body p-0">
                         <div class="log-container" id="logContainer">
-                            <div class="text-muted">준비 완료</div>
+                            <div class="text-muted" data-i18n="log.ready">Ready</div>
                         </div>
                     </div>
                 </div>
@@ -295,25 +303,25 @@
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="viewerTitle"><i class="bi bi-image me-2"></i> 이미지</h5>
+                    <h5 class="modal-title" id="viewerTitle"><i class="bi bi-image me-2"></i> Image</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body text-center">
-                    <img src="" alt="원본 이미지" class="img-fluid rounded" id="viewerImage" style="max-height: 65vh;">
+                    <img src="" alt="Original image" data-i18n-alt="viewer.originalAlt" class="img-fluid rounded" id="viewerImage" style="max-height: 65vh;">
                     <video controls class="d-none img-fluid rounded" id="viewerVideo" style="max-height: 65vh;"></video>
                 </div>
                 <div class="modal-footer justify-content-center flex-wrap gap-2">
                     <button type="button" class="btn btn-primary" id="viewerEditImageBtn">
-                        <i class="bi bi-pencil-square me-1"></i> 이미지 편집
+                        <i class="bi bi-pencil-square me-1"></i> <span data-i18n="viewer.editImage">Edit Image</span>
                     </button>
                     <button type="button" class="btn btn-info text-white" id="viewerEditVideoBtn">
-                        <i class="bi bi-film me-1"></i> 비디오 편집
+                        <i class="bi bi-film me-1"></i> <span data-i18n="viewer.editVideo">Edit as Video</span>
                     </button>
                     <button type="button" class="btn btn-danger" id="viewerDeleteBtn">
-                        <i class="bi bi-trash me-1"></i> 삭제
+                        <i class="bi bi-trash me-1"></i> <span data-i18n="viewer.delete">Delete</span>
                     </button>
                     <a href="#" download class="btn btn-success" id="viewerDownloadBtn">
-                        <i class="bi bi-download me-1"></i> 다운로드
+                        <i class="bi bi-download me-1"></i> <span data-i18n="common.download">Download</span>
                     </a>
                 </div>
             </div>
@@ -325,7 +333,7 @@
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-list-ul"></i> 프롬프트 목록</h5>
+                    <h5 class="modal-title"><i class="bi bi-list-ul"></i> <span data-i18n="prompt.modalTitle">Saved Prompts</span></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -340,6 +348,7 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Custom JS -->
+    <script src="/static/js/i18n.js?v={{ASSET_VERSION}}"></script>
     <script src="/static/js/main.js?v={{ASSET_VERSION}}"></script>
 </body>
 

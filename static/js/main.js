@@ -138,10 +138,10 @@ async function loadModelConfig() {
         const response = await fetch('/api/config');
         if (response.ok) {
             modelConfig = {...modelConfig, ...await response.json()};
-            log(`모델 설정 로드: ${modelConfig.standard_model_alias}, ${modelConfig.lite_model_alias}, ${modelConfig.advanced_model_alias}`);
+            log(t('log.configLoaded', {models: `${modelConfig.standard_model_alias}, ${modelConfig.lite_model_alias}, ${modelConfig.advanced_model_alias}`}));
         }
     } catch (e) {
-        log('모델 설정 로드 실패, 기본값 사용');
+        log(t('log.configFailed'));
     }
     // 셀렉트 옵션 업데이트 (UI에는 Nano Banana 2, Nano Banana 2 Lite, Nano Banana Pro 노출)
     const imageModelSelect = document.getElementById('imageModel');
@@ -194,8 +194,8 @@ function updateEstimatedCost() {
 
     if (operation === 'text-to-image' || operation === 'image-to-image') {
         const price = pricing.image_output[imageModel.value]?.[imageResolution.value];
-        pricingValue.textContent = price === undefined ? '가격 정보 없음' : `${formatUsd(price)} / 장`;
-        pricingDetail.textContent = `출력 이미지 1장 기준 · 입력 텍스트와 참조 이미지는 별도 과금 · ${pricing.updated_at} 기준`;
+        pricingValue.textContent = price === undefined ? t('pricing.na') : t('pricing.perImage', {price: formatUsd(price)});
+        pricingDetail.textContent = t('pricing.imageDetail', {date: pricing.updated_at});
         return;
     }
 
@@ -205,19 +205,25 @@ function updateEstimatedCost() {
         if (videoModel.value === modelConfig.video_omni_model) {
             const omni = pricing.omni;
             pricingValue.textContent = perSecond === undefined
-                ? `${formatUsd(omni.video_output_per_million_tokens)} / 출력 100만 토큰`
-                : `약 ${formatUsd(perSecond * durationSeconds)} / ${durationSeconds}초`;
+                ? t('pricing.perMillionOutput', {price: formatUsd(omni.video_output_per_million_tokens)})
+                : t('pricing.approxPerDuration', {price: formatUsd(perSecond * durationSeconds), sec: durationSeconds});
             pricingDetail.textContent = perSecond === undefined
-                ? `입력 ${formatUsd(omni.input_per_million_tokens)} / 100만 토큰 · 선택 해상도의 초당 환산가는 공식 미제공 · ${pricing.updated_at} 기준`
-                : `약 ${formatUsd(perSecond)} / 초 · 비디오 출력 ${formatUsd(omni.video_output_per_million_tokens)} / 100만 토큰 · 720p 초당 ${omni.tokens_per_second_720p.toLocaleString('en-US')} 토큰 · 입력 ${formatUsd(omni.input_per_million_tokens)} / 100만 토큰 · ${pricing.updated_at} 기준`;
+                ? t('pricing.omniDetailNoRate', {input: formatUsd(omni.input_per_million_tokens), date: pricing.updated_at})
+                : t('pricing.omniDetail', {
+                    perSec: formatUsd(perSecond),
+                    output: formatUsd(omni.video_output_per_million_tokens),
+                    tps: omni.tokens_per_second_720p.toLocaleString('en-US'),
+                    input: formatUsd(omni.input_per_million_tokens),
+                    date: pricing.updated_at
+                });
             return;
         }
         pricingValue.textContent = perSecond === undefined
-            ? '가격 정보 없음'
-            : `${formatUsd(perSecond * durationSeconds)} / ${durationSeconds}초`;
+            ? t('pricing.na')
+            : t('pricing.perDuration', {price: formatUsd(perSecond * durationSeconds), sec: durationSeconds});
         pricingDetail.textContent = perSecond === undefined
-            ? `${pricing.updated_at} 기준`
-            : `${formatUsd(perSecond)} / 초 · 오디오 포함 · 생성된 동영상만 과금 · ${pricing.updated_at} 기준`;
+            ? t('pricing.asOf', {date: pricing.updated_at})
+            : t('pricing.videoDetail', {perSec: formatUsd(perSecond), date: pricing.updated_at});
         return;
     }
 
@@ -225,8 +231,13 @@ function updateEstimatedCost() {
         const tts = pricing.tts;
         const outputPerMinute = tts.output_per_million_tokens
             * tts.audio_tokens_per_second * 60 / 1_000_000;
-        pricingValue.textContent = `${formatUsd(outputPerMinute)} / 출력 1분`;
-        pricingDetail.textContent = `${tts.model} · 출력 ${tts.audio_tokens_per_second} 토큰/초 · 입력 텍스트 ${formatUsd(tts.input_per_million_tokens)} / 100만 토큰 · ${pricing.updated_at} 기준`;
+        pricingValue.textContent = t('pricing.perMinute', {price: formatUsd(outputPerMinute)});
+        pricingDetail.textContent = t('pricing.ttsDetail', {
+            model: tts.model,
+            tps: tts.audio_tokens_per_second,
+            input: formatUsd(tts.input_per_million_tokens),
+            date: pricing.updated_at
+        });
         return;
     }
 
@@ -267,11 +278,11 @@ function updateSessionUI() {
     if (isImageOperation && lastImageSessionId) {
         // 세션이 있으면 새 실행 버튼과 세션 알림 표시
         newSessionBtn.classList.remove('d-none');
-        executeBtnLabel.textContent = '편집하기';
+        setI18n(executeBtnLabel, 'btn.edit');
     } else {
         // 세션이 없으면 숨김
         newSessionBtn.classList.add('d-none');
-        executeBtnLabel.textContent = '실행하기';
+        setI18n(executeBtnLabel, 'btn.run');
     }
 }
 
@@ -283,10 +294,10 @@ function toggleSettingsVisibility() {
     isSettingsVisible = !isSettingsVisible;
     if (isSettingsVisible) {
         settingsBody.classList.remove('d-none');
-        toggleSettingsBtn.innerHTML = '<i class="bi bi-chevron-up me-1"></i> 숨기기';
+        toggleSettingsBtn.innerHTML = `<i class="bi bi-chevron-up me-1"></i> <span data-i18n="settings.hide">${t('settings.hide')}</span>`;
     } else {
         settingsBody.classList.add('d-none');
-        toggleSettingsBtn.innerHTML = '<i class="bi bi-chevron-down me-1"></i> 보이기';
+        toggleSettingsBtn.innerHTML = `<i class="bi bi-chevron-down me-1"></i> <span data-i18n="settings.show">${t('settings.show')}</span>`;
     }
 }
 
@@ -311,9 +322,9 @@ function updateImagePreview() {
     }
     
     if (selectedFiles.length === 1) {
-        selectedFileName.textContent = `선택된 파일: ${selectedFiles[0].name}`;
+        selectedFileName.textContent = t('file.selectedOne', {name: selectedFiles[0].name});
     } else {
-        selectedFileName.textContent = `선택된 파일: ${selectedFiles.length}개`;
+        selectedFileName.textContent = t('file.selectedMany', {n: selectedFiles.length});
     }
     
     const operation = operationType.value;
@@ -329,14 +340,14 @@ function updateImagePreview() {
                 previewItem.innerHTML = `
                     <div class="image-number">${index + 1}</div>
                     <video src="${e.target.result}" style="width: 100%; height: 100%; object-fit: cover;"></video>
-                    <button class="remove-image" data-index="${index}" title="삭제">×</button>
+                    <button class="remove-image" data-index="${index}" title="${t('common.remove')}">×</button>
                 `;
             } else {
                 // 이미지 파일인 경우
                 previewItem.innerHTML = `
                     <div class="image-number">${index + 1}</div>
                     <img src="${e.target.result}" alt="Preview ${index + 1}">
-                    <button class="remove-image" data-index="${index}" title="삭제">×</button>
+                    <button class="remove-image" data-index="${index}" title="${t('common.remove')}">×</button>
                 `;
             }
             
@@ -353,7 +364,7 @@ function updateImagePreview() {
 function removeFile(index) {
     selectedFiles.splice(index, 1);
     updateImagePreview();
-    log(`파일 제거됨 (남은 파일: ${selectedFiles.length}개)`);
+    log(t('log.fileRemoved', {n: selectedFiles.length}));
 }
 
 // 파일 추가 함수
@@ -361,7 +372,7 @@ function addFiles(files) {
     const newFiles = Array.from(files);
     
     if (selectedFiles.length + newFiles.length > MAX_FILES) {
-        alert(`최대 ${MAX_FILES}개의 파일만 선택할 수 있습니다.`);
+        alert(t('alert.maxFiles', {n: MAX_FILES}));
         const allowedCount = MAX_FILES - selectedFiles.length;
         selectedFiles = selectedFiles.concat(newFiles.slice(0, allowedCount));
     } else {
@@ -369,7 +380,7 @@ function addFiles(files) {
     }
     
     updateImagePreview();
-    log(`파일 추가됨: ${newFiles.length}개 (전체: ${selectedFiles.length}개)`);
+    log(t('log.filesAdded', {added: newFiles.length, total: selectedFiles.length}));
 }
 
 // MAX_FILES 업데이트 함수
@@ -378,15 +389,15 @@ function updateMaxFiles() {
     
     if (operation === 'image-to-image') {
         MAX_FILES = 14;
-        fileInputCardTitle.innerHTML = `<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 ${MAX_FILES}장)`;
-        log(`최대 파일 수 변경: ${MAX_FILES}장`);
+        setI18n(fileInputCardTitle, 'file.title', {n: MAX_FILES});
+        log(t('log.maxFilesChanged', {n: MAX_FILES}));
     } else if (operation === 'image-to-video') {
         MAX_FILES = videoModel.value === modelConfig.video_lite_model
             ? 1
             : videoModel.value === modelConfig.video_omni_model
                 ? 6
                 : 3;
-        fileInputCardTitle.innerHTML = `<i class="bi bi-file-earmark-image"></i> 입력 파일 (최대 ${MAX_FILES}장)`;
+        setI18n(fileInputCardTitle, 'file.title', {n: MAX_FILES});
     }
 }
 
@@ -417,7 +428,7 @@ function updateVideoOptions() {
         if (selectedFiles.length > MAX_FILES) {
             selectedFiles = selectedFiles.slice(0, MAX_FILES);
             updateImagePreview();
-            log(`선택한 비디오 모델의 제한에 따라 입력 이미지를 ${MAX_FILES}장으로 조정했습니다.`);
+            log(t('log.videoFilesTrimmed', {n: MAX_FILES}));
         }
     }
     updateEstimatedCost();
@@ -525,7 +536,7 @@ function updateUIForOperation() {
         } else {
             updateMaxFiles();
         }
-        dropZoneText.textContent = '여기에 파일을 드래그앤드롭하거나';
+        setI18n(dropZoneText, 'file.drop');
         fileInput.accept = 'image/*';
         fileInput.multiple = true;
     } else {
@@ -560,7 +571,7 @@ imageModel.addEventListener('change', () => {
     if (selectedFiles.length > MAX_FILES) {
         selectedFiles = selectedFiles.slice(0, MAX_FILES);
         updateImagePreview();
-        log(`파일 개수가 최대 제한을 초과하여 ${MAX_FILES}개로 조정되었습니다.`);
+        log(t('log.filesTrimmed', {n: MAX_FILES}));
     }
 });
 
@@ -613,19 +624,19 @@ async function executeOperation(isNew = false) {
     
     // 유효성 검사
     if (!prompt) {
-        alert('프롬프트를 입력하세요.');
+        alert(t('alert.enterPrompt'));
         return;
     }
     
     // Image to Image에서 새로 만들기 모드일 때만 파일 필수
     if (operation === 'image-to-image' && isNew && selectedFiles.length === 0) {
-        alert('입력 파일을 선택하세요.');
+        alert(t('alert.selectFile'));
         return;
     }
     
     // Image to Video는 항상 파일 필수
     if (operation === 'image-to-video' && selectedFiles.length === 0) {
-        alert('입력 파일을 선택하세요.');
+        alert(t('alert.selectFile'));
         return;
     }
     
@@ -635,9 +646,9 @@ async function executeOperation(isNew = false) {
     progressAlert.classList.remove('d-none');
     resultCard.classList.add('d-none');
     
-    const modeText = isNew ? '실행하기' : (lastImageSessionId ? '편집하기' : '실행하기');
-    log(`작업 시작: ${operation} (${modeText})`);
-    progressMessage.textContent = '처리 중...';
+    const modeText = isNew ? t('btn.run') : (lastImageSessionId ? t('btn.edit') : t('btn.run'));
+    log(t('log.taskStart', {op: operation, mode: modeText}));
+    progressMessage.textContent = t('progress.processing');
     
     try {
         let result;
@@ -664,15 +675,15 @@ async function executeOperation(isNew = false) {
             // 세션 ID 저장 (Text to Image, Image to Image인 경우)
             if ((operation === 'text-to-image' || operation === 'image-to-image') && result.session_id) {
                 lastImageSessionId = result.session_id;
-                log(`세션 ID 저장됨: ${lastImageSessionId}`);
+                log(t('log.sessionSaved', {id: lastImageSessionId}));
                 updateSessionUI();
             }
             
             // LLM 응답이 있으면 로그에 표시 (파란색으로)
             if (result.llm_response) {
-                log(`LLM 응답: ${result.llm_response}`, true);
+                log(t('log.llmResponse', {text: result.llm_response}), true);
             }
-            log('작업 완료');
+            log(t('log.taskDone'));
             displayResult(result, operation);
 
             // 이미지가 생성된 경우 갤러리 갱신
@@ -680,18 +691,18 @@ async function executeOperation(isNew = false) {
                 loadGallery(true);
             }
         } else {
-            throw new Error('작업 실패');
+            throw new Error(t('error.taskFailed'));
         }
         
     } catch (error) {
         // 로그에는 전체 에러 내용 출력 (빨간색으로 표시)
         if (error.details) {
-            logError(`오류 발생:\n${error.details}`);
+            logError(t('log.error', {msg: `\n${error.details}`}));
         } else {
-            logError(`오류 발생: ${error.message}`);
+            logError(t('log.error', {msg: error.message}));
         }
         // 팝업은 간단하게
-        alert('작업 실패: 자세한 내용은 로그를 확인하세요.');
+        alert(t('alert.taskFailed'));
     } finally {
         executeBtn.disabled = false;
         newSessionBtn.disabled = false;
@@ -732,7 +743,7 @@ async function executeTextToImage(prompt, aspectRatio, model, resolution, isNew 
     // Multi-turn 모드: 세션 ID 전달
     if (!isNew && lastImageSessionId) {
         formData.append('session_id', lastImageSessionId);
-        log(`Multi-turn 모드: 세션 ${lastImageSessionId} 사용`);
+        log(t('log.multiturn', {id: lastImageSessionId}));
     }
 
     const response = await fetch('/api/text-to-image', {
@@ -743,7 +754,7 @@ async function executeTextToImage(prompt, aspectRatio, model, resolution, isNew 
     const result = await readJsonResponse(response);
     
     if (!response.ok) {
-        const error = new Error(result.detail || '작업 실패');
+        const error = new Error(result.detail || t('error.taskFailed'));
         error.details = result.detail;
         throw error;
     }
@@ -761,7 +772,7 @@ async function executeImageToImage(prompt, files, model, resolution, isNew = tru
     // Multi-turn 모드: 세션 ID 전달 (파일은 전송하지 않음)
     if (!isNew && lastImageSessionId) {
         formData.append('session_id', lastImageSessionId);
-        log(`Multi-turn 모드: 세션 ${lastImageSessionId} 사용 (이미지 없이 프롬프트만 전송)`);
+        log(t('log.multiturnNoImage', {id: lastImageSessionId}));
     } else {
         // 새로 만들기 모드: 멀티 파일 업로드
         files.forEach((file, index) => {
@@ -777,7 +788,7 @@ async function executeImageToImage(prompt, files, model, resolution, isNew = tru
     const result = await readJsonResponse(response);
     
     if (!response.ok) {
-        const error = new Error(result.detail || '작업 실패');
+        const error = new Error(result.detail || t('error.taskFailed'));
         error.details = result.detail;
         throw error;
     }
@@ -786,7 +797,7 @@ async function executeImageToImage(prompt, files, model, resolution, isNew = tru
 }
 
 async function executeTextToVideo(prompt, model, resolution, aspectRatio) {
-    log('비디오 생성 중... (시간이 다소 걸릴 수 있습니다)');
+    log(t('log.videoGenerating'));
     
     const formData = new FormData();
     formData.append('prompt', prompt);
@@ -812,7 +823,7 @@ async function executeTextToVideo(prompt, model, resolution, aspectRatio) {
 }
 
 async function executeImageToVideo(prompt, files, model, resolution, aspectRatio) {
-    log('비디오 생성 중... (시간이 다소 걸릴 수 있습니다)');
+    log(t('log.videoGenerating'));
     
     const formData = new FormData();
     formData.append('prompt', prompt);
@@ -844,7 +855,7 @@ async function executeImageToVideo(prompt, files, model, resolution, aspectRatio
 }
 
 async function executeVideoExtension(prompt, videoUUID, resolution, aspectRatio) {
-    log('비디오 확장 중... (시간이 다소 걸릴 수 있습니다)');
+    log(t('log.videoExtending'));
     
     const formData = new FormData();
     formData.append('prompt', prompt);
@@ -874,13 +885,13 @@ async function executeVideoJob(endpoint, formData) {
     const startResponse = await fetch(endpoint, { method: 'POST', body: formData });
     const startResult = await readJsonResponse(startResponse);
     if (!startResponse.ok) {
-        const error = new Error(startResult.detail || '비디오 작업 시작 실패');
+        const error = new Error(startResult.detail || t('error.videoJobStart'));
         error.details = startResult.detail;
         throw error;
     }
 
     const jobId = startResult.job_id;
-    log(`비디오 작업 등록됨: ${jobId}`);
+    log(t('log.videoJobQueued', {id: jobId}));
 
     while (true) {
         const statusResponse = await fetch(`/api/video-jobs/${encodeURIComponent(jobId)}`, {
@@ -888,7 +899,7 @@ async function executeVideoJob(endpoint, formData) {
         });
         const statusResult = await readJsonResponse(statusResponse);
         if (!statusResponse.ok) {
-            const error = new Error(statusResult.detail || '비디오 작업 상태 조회 실패');
+            const error = new Error(statusResult.detail || t('error.videoJobStatus'));
             error.details = statusResult.detail;
             throw error;
         }
@@ -896,11 +907,11 @@ async function executeVideoJob(endpoint, formData) {
             return statusResult.result;
         }
         if (statusResult.status === 'error') {
-            const error = new Error(statusResult.detail || '비디오 생성 실패');
+            const error = new Error(statusResult.detail || t('error.videoFailed'));
             error.details = statusResult.detail;
             throw error;
         }
-        progressMessage.textContent = '비디오 생성 중...';
+        progressMessage.textContent = t('progress.videoGenerating');
         await new Promise(resolve => setTimeout(resolve, 5000));
     }
 }
@@ -911,8 +922,8 @@ async function readJsonResponse(response) {
     try {
         return JSON.parse(text);
     } catch (error) {
-        const contentType = response.headers.get('content-type') || '알 수 없음';
-        const responseError = new Error(`서버가 JSON 대신 ${contentType} 응답을 반환했습니다. HTTP ${response.status}`);
+        const contentType = response.headers.get('content-type') || t('common.unknown');
+        const responseError = new Error(t('error.nonJson', {type: contentType, status: response.status}));
         responseError.details = text || responseError.message;
         throw responseError;
     }
@@ -931,7 +942,7 @@ async function executeTextToSpeech(prompt, voiceName) {
     const result = await response.json();
     
     if (!response.ok) {
-        const error = new Error(result.detail || '작업 실패');
+        const error = new Error(result.detail || t('error.taskFailed'));
         error.details = result.detail;
         throw error;
     }
@@ -947,7 +958,7 @@ function displayResult(result, operation) {
     if (result.text_only) {
         resultContent.innerHTML = `
             <div class="alert alert-info text-start">
-                <h6 class="alert-heading"><i class="bi bi-chat-dots"></i> 텍스트 응답</h6>
+                <h6 class="alert-heading"><i class="bi bi-chat-dots"></i> ${t('result.textResponse')}</h6>
                 <hr>
                 <p class="mb-0" style="white-space: pre-wrap;">${result.llm_response}</p>
             </div>
@@ -965,7 +976,7 @@ function displayResult(result, operation) {
             <img src="${result.output_file}" class="result-media mb-3" alt="Generated Image">
             <div>
                 <a href="${result.output_file}" download class="btn btn-primary">
-                    <i class="bi bi-download"></i> 다운로드
+                    <i class="bi bi-download"></i> ${t('common.download')}
                 </a>
             </div>
         `;
@@ -976,7 +987,7 @@ function displayResult(result, operation) {
             </video>
             <div class="mb-3">
                 <a href="${result.output_file}" download class="btn btn-primary">
-                    <i class="bi bi-download"></i> 다운로드
+                    <i class="bi bi-download"></i> ${t('common.download')}
                 </a>
             </div>
         `;
@@ -989,10 +1000,10 @@ function displayResult(result, operation) {
                     .includes(lastVideoModel);
             const canContinue = (isOmni && lastOmniExtensionCount < 3) || canExtendVeo;
             if (canContinue) {
-                const actionTitle = isOmni ? '장면 연장' : '비디오 확장';
+                const actionTitle = isOmni ? t('result.omniExtendTitle') : t('result.veoExtendTitle');
                 const actionHelp = isOmni
-                    ? `현재 ${10 + lastOmniExtensionCount * 10}초 · 한 번에 10초씩 최대 누적 40초까지 연장할 수 있습니다.`
-                    : '추가 프롬프트를 입력하여 비디오를 확장할 수 있습니다. (최대 141초까지 반복 가능, 한 번에 약 7초씩 확장)';
+                    ? t('result.omniExtendHelp', {sec: 10 + lastOmniExtensionCount * 10})
+                    : t('result.veoExtendHelp');
                 content += `
                     <div class="card mt-3">
                         <div class="card-header bg-info text-white">
@@ -1001,28 +1012,28 @@ function displayResult(result, operation) {
                         <div class="card-body">
                             <p class="text-muted small mb-2">${actionHelp}</p>
                             <textarea class="form-control mb-2" id="extendPrompt" rows="3" 
-                                placeholder="확장할 내용에 대한 프롬프트를 입력하세요..."></textarea>
+                                placeholder="${t('result.extendPlaceholder')}"></textarea>
                             <button class="btn btn-info" id="extendVideoBtn">
-                                <i class="bi bi-plus-circle"></i> 비디오 확장 실행
+                                <i class="bi bi-plus-circle"></i> ${t('result.extendRun')}
                             </button>
                         </div>
                     </div>
                 `;
             } else {
                 const reason = isOmni
-                    ? 'Gemini Omni 비디오가 최대 누적 길이인 40초에 도달했습니다.'
+                    ? t('result.omniMaxReached')
                     : lastVideoModel === modelConfig.video_lite_model
-                        ? 'Veo 3.1 Lite는 비디오 확장을 지원하지 않습니다.'
-                        : `${lastVideoResolution || '현재 해상도'} 비디오는 확장할 수 없습니다.`;
+                        ? t('result.liteNoExtend')
+                        : t('result.resolutionNoExtend', {res: lastVideoResolution || t('result.currentResolution')});
                 content += `
                     <div class="card mt-3">
                         <div class="card-header bg-warning text-dark">
-                            <h6 class="mb-0"><i class="bi bi-exclamation-triangle"></i> 비디오 확장 불가</h6>
+                            <h6 class="mb-0"><i class="bi bi-exclamation-triangle"></i> ${t('result.extendUnavailable')}</h6>
                         </div>
                         <div class="card-body">
                             <p class="text-muted small mb-0">
                                 <i class="bi bi-info-circle"></i> ${reason}<br>
-                                비디오 확장은 <strong>Veo 3.1 Standard 또는 Fast</strong> 모델의 <strong>720p 해상도</strong>만 지원합니다.
+                                ${t('result.extendSupportNote')}
                             </p>
                         </div>
                     </div>
@@ -1036,7 +1047,7 @@ function displayResult(result, operation) {
             </audio>
             <div>
                 <a href="${result.output_file}" download class="btn btn-primary">
-                    <i class="bi bi-download"></i> 다운로드
+                    <i class="bi bi-download"></i> ${t('common.download')}
                 </a>
             </div>
         `;
@@ -1062,17 +1073,16 @@ function displayResult(result, operation) {
 // 비디오 확장 처리 함수
 async function handleVideoExtension() {
     const extendPrompt = document.getElementById('extendPrompt').value.trim();
-    const actionName = '확장';
     
     if (!extendPrompt) {
-        alert(`${actionName}할 내용에 대한 프롬프트를 입력하세요.`);
+        alert(t('alert.enterExtendPrompt'));
         return;
     }
     
     log(`Current lastGeneratedVideoUUID: ${lastGeneratedVideoUUID}`);
     
     if (!lastGeneratedVideoUUID) {
-        alert('확장할 비디오 정보가 없습니다.');
+        alert(t('alert.noVideoToExtend'));
         return;
     }
     
@@ -1080,9 +1090,9 @@ async function handleVideoExtension() {
     executeBtn.disabled = true;
     document.getElementById('extendVideoBtn').disabled = true;
     progressAlert.classList.remove('d-none');
-    progressMessage.textContent = `비디오 ${actionName} 중...`;
+    progressMessage.textContent = t('progress.videoExtending');
     
-    log(`비디오 ${actionName} 작업 시작`);
+    log(t('log.extendStart'));
     
     try {
         const result = await executeVideoExtension(
@@ -1093,7 +1103,7 @@ async function handleVideoExtension() {
         );
         
         if (result && result.status === 'success') {
-            log(`비디오 ${actionName} 완료`);
+            log(t('log.extendDone'));
             
             // 결과 업데이트
             const operation = operationType.value;
@@ -1101,11 +1111,11 @@ async function handleVideoExtension() {
         }
     } catch (error) {
         if (error.details) {
-            logError(`비디오 ${actionName} 오류:\n${error.details}`);
+            logError(t('log.extendError', {msg: `\n${error.details}`}));
         } else {
-            logError(`비디오 ${actionName} 오류: ${error.message}`);
+            logError(t('log.extendError', {msg: error.message}));
         }
-        alert(`비디오 ${actionName} 실패: 자세한 내용은 로그를 확인하세요.`);
+        alert(t('alert.extendFailed'));
     } finally {
         executeBtn.disabled = false;
         const extendVideoBtn = document.getElementById('extendVideoBtn');
@@ -1121,7 +1131,7 @@ savePromptBtn.addEventListener('click', async () => {
     const prompt = promptText.value.trim();
     
     if (!prompt) {
-        alert('저장할 프롬프트를 입력하세요.');
+        alert(t('alert.enterPromptToSave'));
         return;
     }
     
@@ -1137,12 +1147,12 @@ savePromptBtn.addEventListener('click', async () => {
         const result = await response.json();
         
         if (result.status === 'success') {
-            log('프롬프트 저장됨');
-            alert('프롬프트가 저장되었습니다.');
+            log(t('log.promptSaved'));
+            alert(t('alert.promptSaved'));
         }
     } catch (error) {
-        logError(`프롬프트 저장 오류: ${error.message}`);
-        alert('프롬프트 저장 중 오류가 발생했습니다.');
+        logError(t('log.promptSaveError', {msg: error.message}));
+        alert(t('alert.promptSaveError'));
     }
 });
 
@@ -1155,7 +1165,7 @@ loadPromptBtn.addEventListener('click', async () => {
         promptList.innerHTML = '';
         
         if (result.prompts.length === 0) {
-            promptList.innerHTML = '<div class="text-muted text-center p-3">저장된 프롬프트가 없습니다.</div>';
+            promptList.innerHTML = `<div class="text-muted text-center p-3">${t('prompt.empty')}</div>`;
         } else {
             result.prompts.forEach(prompt => {
                 const preview = prompt.content.substring(0, 100);
@@ -1181,7 +1191,7 @@ loadPromptBtn.addEventListener('click', async () => {
                         promptText.value = prompt.content;
                         currentPromptId = prompt.id;
                         promptModal.hide();
-                        log(`프롬프트 ID ${prompt.id} 불러옴`);
+                        log(t('log.promptLoaded', {id: prompt.id}));
                     }
                 });
                 
@@ -1189,7 +1199,7 @@ loadPromptBtn.addEventListener('click', async () => {
                 deleteBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     
-                    if (!confirm('이 프롬프트를 삭제하시겠습니까?')) {
+                    if (!confirm(t('confirm.deletePrompt'))) {
                         return;
                     }
                     
@@ -1202,10 +1212,10 @@ loadPromptBtn.addEventListener('click', async () => {
                         
                         if (result.status === 'success') {
                             item.remove();
-                            log('프롬프트 삭제됨');
+                            log(t('log.promptDeleted'));
                         }
                     } catch (error) {
-                        alert('프롬프트 삭제 중 오류가 발생했습니다.');
+                        alert(t('alert.promptDeleteError'));
                     }
                 });
                 
@@ -1215,8 +1225,8 @@ loadPromptBtn.addEventListener('click', async () => {
         
         promptModal.show();
     } catch (error) {
-        logError(`프롬프트 목록 불러오기 오류: ${error.message}`);
-        alert('프롬프트 목록을 불러오는 중 오류가 발생했습니다.');
+        logError(t('log.promptListError', {msg: error.message}));
+        alert(t('alert.promptListError'));
     }
 });
 
@@ -1229,7 +1239,7 @@ function formatPromptSavedAt(timestamp) {
     const savedAt = new Date(utcTimestamp);
     if (Number.isNaN(savedAt.getTime())) return timestamp;
 
-    return new Intl.DateTimeFormat('ko-KR', {
+    return new Intl.DateTimeFormat(currentLang === 'ko' ? 'ko-KR' : 'en-US', {
         timeZone: 'Asia/Seoul',
         year: 'numeric',
         month: '2-digit',
@@ -1299,7 +1309,7 @@ async function loadGallery(reset = false) {
         galleryHasMore = data.has_more === true;
     } catch (error) {
         if (error.name !== 'AbortError') {
-            log('갤러리 로드 실패');
+            log(t('log.galleryFailed'));
         }
     } finally {
         if (galleryLoadController === controller) {
@@ -1314,7 +1324,7 @@ function renderGallery(images, isFirstPage) {
     if (isFirstPage && images.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'text-muted small text-center p-3';
-        empty.textContent = '아직 생성된 미디어가 없습니다.';
+        setI18n(empty, 'gallery.empty');
         galleryThumbs.appendChild(empty);
         return;
     }
@@ -1329,7 +1339,8 @@ function renderGallery(images, isFirstPage) {
         item.appendChild(thumbnail);
         const badge = document.createElement('span');
         badge.className = 'gallery-media-badge';
-        badge.title = img.media_type === 'video' ? '비디오' : '이미지';
+        badge.dataset.i18nTitle = img.media_type === 'video' ? 'viewer.video' : 'viewer.image';
+        badge.title = t(badge.dataset.i18nTitle);
         badge.innerHTML = `<i class="bi ${img.media_type === 'video' ? 'bi-play-fill' : 'bi-image'}"></i>`;
         item.appendChild(badge);
         item.addEventListener('click', () => openImageViewer(img));
@@ -1341,7 +1352,8 @@ function renderGallery(images, isFirstPage) {
 function openImageViewer(img) {
     currentViewerImage = img;
     const isVideo = img.media_type === 'video';
-    viewerTitle.innerHTML = `<i class="bi ${isVideo ? 'bi-film' : 'bi-image'} me-2"></i>${isVideo ? '비디오' : '이미지'}`;
+    viewerTitle.innerHTML = `<i class="bi ${isVideo ? 'bi-film' : 'bi-image'} me-2"></i><span data-i18n="${isVideo ? 'viewer.video' : 'viewer.image'}"></span>`;
+    applyI18n(viewerTitle);
     viewerImage.classList.toggle('d-none', isVideo);
     viewerVideo.classList.toggle('d-none', !isVideo);
     viewerEditImageBtn.classList.toggle('d-none', isVideo);
@@ -1386,14 +1398,14 @@ async function editViewerImage(targetOperation) {
         }
 
         imageViewerModal.hide();
-        const modeLabel = targetOperation === 'image-to-video' ? '비디오' : '이미지';
-        log(`${modeLabel} 편집용 base 이미지 로드됨: ${filename}`);
+        const modeLabel = t(targetOperation === 'image-to-video' ? 'media.video' : 'media.image');
+        log(t('log.baseImageLoaded', {mode: modeLabel, name: filename}));
         window.scrollTo({ top: 0, behavior: 'smooth' });
         // 데스크탑 듀얼 패널에서는 입력 패널이 독립 스크롤되므로 함께 맨 위로 이동
         document.getElementById('inputPanel')?.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
-        logError(`편집용 이미지 로드 실패: ${error.message}`);
-        alert('편집용 이미지를 불러오지 못했습니다.');
+        logError(t('log.editImageLoadFailed', {msg: error.message}));
+        alert(t('alert.editImageLoadFailed'));
     }
 }
 
@@ -1402,8 +1414,8 @@ async function deleteViewerImage() {
     if (!currentViewerImage) {
         return;
     }
-    const mediaLabel = currentViewerImage.media_type === 'video' ? '비디오' : '이미지';
-    if (!confirm(`이 ${mediaLabel}를 삭제하시겠습니까?`)) {
+    const mediaLabel = t(currentViewerImage.media_type === 'video' ? 'media.video' : 'media.image');
+    if (!confirm(t('confirm.deleteMedia', {media: mediaLabel}))) {
         return;
     }
     const { filename } = currentViewerImage;
@@ -1412,15 +1424,15 @@ async function deleteViewerImage() {
             method: 'DELETE'
         });
         if (!response.ok) {
-            throw new Error('삭제 실패');
+            throw new Error(t('error.deleteFailed'));
         }
         imageViewerModal.hide();
-        log(`${mediaLabel} 삭제됨: ${filename}`);
+        log(t('log.mediaDeleted', {media: mediaLabel, name: filename}));
         currentViewerImage = null;
         await loadGallery(true);
     } catch (error) {
-        logError(`${mediaLabel} 삭제 실패: ${error.message}`);
-        alert(`${mediaLabel} 삭제 중 오류가 발생했습니다.`);
+        logError(t('log.mediaDeleteFailed', {media: mediaLabel, msg: error.message}));
+        alert(t('alert.mediaDeleteError', {media: mediaLabel}));
     }
 }
 
@@ -1444,6 +1456,18 @@ document.getElementById('imageViewerModal').addEventListener('hidden.bs.modal', 
     viewerVideo.removeAttribute('src');
 });
 
+// 언어 선택: 변경 시 정적 텍스트를 다시 번역하고 동적으로 계산되는 문구를 갱신한다.
+// 이미 출력된 로그와 결과 카드는 기존 언어를 유지한다.
+const langSelect = document.getElementById('langSelect');
+langSelect.value = currentLang;
+langSelect.addEventListener('change', () => {
+    setLang(langSelect.value);
+    updateEstimatedCost();
+    if (selectedFiles.length > 0) {
+        updateImagePreview();
+    }
+});
+
 // 초기화
 initGalleryVisibility();
 loadModelConfig().then(() => {
@@ -1458,5 +1482,5 @@ if (window.matchMedia('(hover: hover)').matches) {
     tooltipTriggerList.forEach(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
 }
 
-log('웹 애플리케이션 준비 완료');
+log(t('log.appReady'));
 
