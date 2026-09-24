@@ -315,6 +315,22 @@ function setI18n(el, key, params) {
 // data-i18n* 속성이 지정된 모든 요소를 현재 언어로 번역한다.
 function applyI18n(root = document) {
     document.documentElement.lang = currentLang;
+    const disableTranslation = currentLang === 'en';
+    document.documentElement.classList.toggle('notranslate', disableTranslation);
+    if (disableTranslation) {
+        document.documentElement.setAttribute('translate', 'no');
+    } else {
+        document.documentElement.removeAttribute('translate');
+    }
+    let translationMeta = document.head.querySelector('meta[name="google"][content="notranslate"]');
+    if (disableTranslation && !translationMeta) {
+        translationMeta = document.createElement('meta');
+        translationMeta.name = 'google';
+        translationMeta.content = 'notranslate';
+        document.head.appendChild(translationMeta);
+    } else if (!disableTranslation && translationMeta) {
+        translationMeta.remove();
+    }
     root.querySelectorAll('[data-i18n]').forEach(el => {
         const params = el.dataset.i18nParams ? JSON.parse(el.dataset.i18nParams) : {};
         el.textContent = t(el.dataset.i18n, params);
