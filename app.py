@@ -421,6 +421,12 @@ image_chat_sessions = {}
 LOGIN_ID = os.getenv("LOGIN_ID", "admin")
 LOGIN_PASSWORD = os.getenv("LOGIN_PASSWORD", "admin")
 
+# 로컬 모드: `uv run app.py --local` 로 실행하면 로그인 절차를 생략함
+# 서버는 localhost 에만 바인딩되므로 외부 접근은 불가함
+LOCAL_MODE = "--local" in sys.argv[1:]
+if LOCAL_MODE:
+    logger.warning("Local mode enabled (--local): login is bypassed")
+
 # 세션 저장소 (메모리)
 # session_token -> {"ip": str, "created_at": float}
 active_sessions = {}
@@ -952,7 +958,9 @@ def record_failed_attempt(ip: str) -> bool:
     return False
 
 def verify_session(session_token: str = Cookie(None)) -> bool:
-    """세션 토큰 검증"""
+    """세션 토큰 검증 (로컬 모드에서는 항상 통과)"""
+    if LOCAL_MODE:
+        return True
     if not session_token:
         return False
     return session_token in active_sessions
