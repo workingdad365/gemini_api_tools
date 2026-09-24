@@ -138,7 +138,6 @@ async function loadModelConfig() {
         const response = await fetch('/api/config');
         if (response.ok) {
             modelConfig = {...modelConfig, ...await response.json()};
-            log(t('log.configLoaded', {models: `${modelConfig.standard_model_alias}, ${modelConfig.lite_model_alias}, ${modelConfig.advanced_model_alias}`}));
         }
     } catch (e) {
         log(t('log.configFailed'));
