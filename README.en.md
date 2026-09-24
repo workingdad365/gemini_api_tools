@@ -6,7 +6,7 @@ A FastAPI-based web application for generating images, videos, and speech with t
 
 
 
-![](screenshot.webp)
+![](screenshot.en.webp)
 
 ## Features
 
