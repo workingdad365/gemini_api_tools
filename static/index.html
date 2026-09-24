@@ -10,6 +10,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Fonts: Geist(라틴) + Pretendard(한글) + JetBrains Mono(로그) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
     <!-- Custom CSS -->
     <link href="/static/css/style.css?v={{ASSET_VERSION}}" rel="stylesheet">
     <!-- Favicon -->
@@ -20,13 +25,13 @@
     <nav class="navbar navbar-dark bg-dark shadow">
         <div class="container-fluid">
             <div class="d-flex align-items-center">
-                <button class="btn btn-outline-secondary btn-sm me-2" id="galleryToggleBtn" type="button"
+                <button class="btn btn-ghost btn-sm me-2" id="galleryToggleBtn" type="button"
                     data-bs-toggle="tooltip" data-bs-placement="bottom" title="Show/hide gallery" data-i18n-title="nav.galleryToggle">
                     <i class="bi bi-images"></i>
                 </button>
-                <span class="navbar-brand mb-0 h1 text-gradient d-flex align-items-center">
-                    <i class="bi bi-stars text-primary"></i> Gemini Playground
-                    <img src="/static/img/logo.png" alt="Logo" class="ms-2" style="height: 32px;">
+                <span class="navbar-brand brand mb-0">
+                    <span class="brand-mark" aria-hidden="true"></span>
+                    Gemini <span class="brand-sub">Playground</span>
                 </span>
             </div>
             <div class="d-flex align-items-center gap-2">
@@ -35,7 +40,7 @@
                     <option value="en">English</option>
                     <option value="ko">한국어</option>
                 </select>
-                <a href="/logout" class="btn btn-danger btn-sm" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Logout" data-i18n-title="nav.logout">
+                <a href="/logout" class="btn btn-ghost btn-logout btn-sm" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Logout" data-i18n-title="nav.logout">
                     <i class="bi bi-box-arrow-right"></i>
                 </a>
             </div>
@@ -250,12 +255,12 @@
                 </div>
 
                 <!-- 실행 버튼 -->
-                <div class="text-center mb-3">
-                    <button class="btn btn-secondary btn-lg rounded-pill px-4 py-2 shadow me-2 d-none" id="newSessionBtn">
-                        <i class="bi bi-play-circle me-2"></i> <span class="fw-bold fs-6" data-i18n="btn.run">Run</span>
+                <div class="run-bar">
+                    <button class="btn btn-secondary btn-lg d-none" id="newSessionBtn">
+                        <i class="bi bi-play-circle me-2"></i> <span data-i18n="btn.run">Run</span>
                     </button>
-                    <button class="btn btn-primary btn-lg rounded-pill px-4 py-2 shadow" id="executeBtn">
-                        <i class="bi bi-play-circle-fill me-2"></i> <span class="fw-bold fs-6" id="executeBtnLabel" data-i18n="btn.run">Run</span>
+                    <button class="btn btn-primary btn-lg" id="executeBtn">
+                        <i class="bi bi-play-fill me-2"></i> <span id="executeBtnLabel" data-i18n="btn.run">Run</span>
                     </button>
                 </div>
             </div>
@@ -314,13 +319,13 @@
                     <button type="button" class="btn btn-primary" id="viewerEditImageBtn">
                         <i class="bi bi-pencil-square me-1"></i> <span data-i18n="viewer.editImage">Edit Image</span>
                     </button>
-                    <button type="button" class="btn btn-info text-white" id="viewerEditVideoBtn">
+                    <button type="button" class="btn btn-outline-secondary" id="viewerEditVideoBtn">
                         <i class="bi bi-film me-1"></i> <span data-i18n="viewer.editVideo">Edit as Video</span>
                     </button>
-                    <button type="button" class="btn btn-danger" id="viewerDeleteBtn">
+                    <button type="button" class="btn btn-outline-danger" id="viewerDeleteBtn">
                         <i class="bi bi-trash me-1"></i> <span data-i18n="viewer.delete">Delete</span>
                     </button>
-                    <a href="#" download class="btn btn-success" id="viewerDownloadBtn">
+                    <a href="#" download class="btn btn-outline-secondary" id="viewerDownloadBtn">
                         <i class="bi bi-download me-1"></i> <span data-i18n="common.download">Download</span>
                     </a>
                 </div>
